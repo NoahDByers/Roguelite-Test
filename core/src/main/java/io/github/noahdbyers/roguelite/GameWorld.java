@@ -218,7 +218,7 @@ public class GameWorld {
 
         int tileSize = room.getTileSize();
 
-        // Use room pixel bounds (NOT Gdx.graphics.getWidth/Height) so this matches your virtual room
+        // Use room pixel bounds NOT Gdx.graphics.getWidth/Height so this matches your virtual room
         float roomPixelW = room.getRoomWidth() * tileSize;
         float roomPixelH = room.getRoomHeight() * tileSize;
 
