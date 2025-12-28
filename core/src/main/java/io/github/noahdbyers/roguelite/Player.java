@@ -1,6 +1,7 @@
 package io.github.noahdbyers.roguelite;
 
 import com.badlogic.gdx.Gdx;
+import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 
 public class Player extends Entity {
     public enum Facing { UP, DOWN, LEFT, RIGHT }
@@ -34,11 +35,11 @@ public class Player extends Entity {
         }
         if (Gdx.input.isKeyPressed(com.badlogic.gdx.Input.Keys.S)) {
             moveY -= getSpeed() * delta;
-            facing = facing.DOWN;
+            facing = Facing.DOWN;
         }
         if (Gdx.input.isKeyPressed(com.badlogic.gdx.Input.Keys.W)) {
             moveY += getSpeed() * delta;
-            facing = facing.UP;
+            facing = Facing.UP;
         }
 
         //Move X axis
@@ -93,8 +94,33 @@ public class Player extends Entity {
         if (health > maxHealth) health = maxHealth;
     }
 
+    public boolean collidesWithRoom(int[][] room, int tileSize) {
+        int leftTile = (int)(getX() / tileSize);
+        int rightTile = (int)((getX() + getWidth()) / tileSize);
+        int bottomTile = (int)(getY() / tileSize);
+        int topTile = (int)((getY() + getHeight()) / tileSize);
+
+        for (int a = bottomTile; a <= topTile; a++) {
+            for(int b = leftTile; b <= rightTile; b++) {
+                if (room[a][b] == 1) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
     public void increaseMaxHealth(int amount) {
         maxHealth += amount;
         health += amount;
+    }
+
+    //This method is used to draw the player
+    @Override
+    public void draw(ShapeRenderer shapeRenderer) {
+        //Checking if the player is
+        if (isInvulnerable()) shapeRenderer.setColor(1, 1, 0, 1);
+        else shapeRenderer.setColor(0, 1, 0, 1);
+
+        shapeRenderer.rect(getX(), getY(), getWidth(), getHeight());
     }
 }

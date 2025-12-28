@@ -1,6 +1,7 @@
 package io.github.noahdbyers.roguelite;
 
 import com.badlogic.gdx.Gdx;
+import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 
 public class Bullet extends Entity{
     private float vx, vy;
@@ -32,7 +33,6 @@ public class Bullet extends Entity{
                 getY() > Gdx.graphics.getHeight() + getHeight();
     }
 
-    @Override
     public boolean collidesWithRoom(int[][] room, int tileSize) {
         int tx = (int)((getX() + getWidth() / 2f) / tileSize);
         int ty = (int)((getY() + getHeight() / 2f) / tileSize);
@@ -41,5 +41,13 @@ public class Bullet extends Entity{
         if (ty < 0 || ty >= room.length || tx < 0 || tx >= room[0].length) return true;
 
         return room[ty][tx] == 1;
+    }
+
+    //This is a method to draw the bullets on screen
+    @Override
+    public void draw(ShapeRenderer shapeRenderer) {
+        //Draw bullets
+        shapeRenderer.setColor(1, 1, 0, 1);
+        shapeRenderer.rect(getX(), getY(), getWidth(), getHeight());
     }
 }

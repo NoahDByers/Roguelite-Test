@@ -1,3 +1,5 @@
+background.png
+bannerSpritesheet.png
 com/badlogic/gdx/utils/lsans-15.fnt
 com/badlogic/gdx/utils/lsans-15.png
 libgdx.png

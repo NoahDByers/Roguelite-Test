@@ -1,6 +1,7 @@
 package io.github.noahdbyers.roguelite;
 
 import com.badlogic.gdx.Gdx;
+import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 
 public abstract class Entity {
     private float x, y;
@@ -58,23 +59,8 @@ public abstract class Entity {
         y = Math.max(0, Math.min(y, Gdx.graphics.getHeight() - height));
     }
 
-    //Tile based collision detection (based off of tile size)
-    public boolean collidesWithRoom(int[][] room, int tileSize) {
-        int leftTile = (int)(x / tileSize);
-        int rightTile = (int)((x + width) / tileSize);
-        int bottomTile = (int)(y / tileSize);
-        int topTile = (int)((y + height) / tileSize);
-
-        for (int a = bottomTile; a <= topTile; a++) {
-            for(int b = leftTile; b <= rightTile; b++) {
-                if (room[a][b] == 1) {
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
-
     //Abstract methods
     abstract public void update();
+
+    public void draw(ShapeRenderer shapeRenderer){}
 }

@@ -2,10 +2,19 @@ package io.github.noahdbyers.roguelite;
 
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Input;
-import com.badlogic.gdx.math.MathUtils;
+import com.badlogic.gdx.graphics.Texture;
 
 import java.util.ArrayList;
+import java.util.Random;
 
+/**
+ * Cleaned-up GameWorld:
+ * - Removes the missing Weapon dependency (no Weapon.java needed).
+ * - Never relies on uninitialized offeredUpgrades (generates them when a wave clears).
+ * - Exposes offered upgrades via getter so UI can display the SAME choices the world will apply.
+ * - Safe restart that always gives you a valid Player and resets run state.
+ * - Bullet damage/speed are actually tracked (simple and extensible).
+ */
 public class GameWorld {
     // Room / world
     private final Room room;
@@ -17,7 +26,6 @@ public class GameWorld {
 
     // Run stats / progression
     private boolean gameOver = false;
-
     private int enemiesKilled = 0;
 
     private int wave = 1;
@@ -27,7 +35,7 @@ public class GameWorld {
     private boolean choosingUpgrade = false;
     private final Upgrade[] offeredUpgrades = new Upgrade[3];
 
-    // Difficulty
+    // Difficulty (optional spawn-over-time system)
     private float spawnTimer = 0f;
     private float difficultyTimer = 0f;
 
@@ -39,15 +47,27 @@ public class GameWorld {
     private float minSpawnInterval = startMinSpawnInterval;
     private int maxEnemies = startMaxEnemies;
 
-    // Weapon / auto-fire
-    private final Weapon starterWeapon = new Weapon("Starter", 0f, 0.25f);
+    // Auto-fire (replaces Weapon)
+    private float attackCooldown = 0f;
+    private float attackCooldownTime = 0.25f; // seconds per shot
 
-    public GameWorld(Room room) {
+    // Bullet tuning
+    private float bulletSpeed = 240f;
+    private float bulletSize = 8f;
+    private int bulletDamage = 1;
+
+    Texture cardTexture = new Texture("upgrade_card.png");
+
+    // RNG
+    private final Random rng = new Random();
+
+    public GameWorld(Room room, Player player) {
         this.room = room;
+        this.player = player; // may be null; restart() will ensure it isn't
         restart();
     }
 
-    // -------------------- Public getters (Main renders from these) --------------------
+    // -------------------- Public getters (Main/UI render from these) --------------------
     public Room getRoom() { return room; }
     public Player getPlayer() { return player; }
     public ArrayList<Enemy> getEnemies() { return enemies; }
@@ -55,10 +75,12 @@ public class GameWorld {
 
     public boolean isGameOver() { return gameOver; }
     public boolean isChoosingUpgrade() { return choosingUpgrade; }
-    public Upgrade[] getOfferedUpgrades() { return offeredUpgrades; }
 
     public int getEnemiesKilled() { return enemiesKilled; }
     public int getWave() { return wave; }
+
+    /** UI should read these to display the 3 choices currently being offered. */
+    public Upgrade[] getOfferedUpgrades() { return offeredUpgrades; }
 
     // -------------------- Update loop --------------------
     public void update(float delta) {
@@ -76,11 +98,18 @@ public class GameWorld {
             return;
         }
 
+        // Safety: player should always exist after restart, but keep this guard
+        if (player == null) {
+            ensurePlayer();
+            if (player == null) return;
+        }
+
         // Normal simulation
-        player.update(room, room.getTileSize());          // use your existing player update that includes collision
+        player.update(room, room.getTileSize());
         player.updateTimers();
 
         for (Enemy e : enemies) {
+            if (e == null) continue;
             e.update(player, room, room.getTileSize());
         }
 
@@ -93,16 +122,16 @@ public class GameWorld {
         // Bullets update / collisions
         updateBullets();
 
-        // Waves + upgrades hook
+        // Wave management
         if (!waveActive) {
             startWave();
         }
 
-        if (enemies.isEmpty()) {
-            // wave cleared → show upgrade choices
-            offerUpgrades();
-            wave++;
+        // Wave cleared -> offer upgrades
+        if (waveActive && enemies.isEmpty()) {
             waveActive = false;
+            wave++; // next wave number
+            beginUpgradeChoice();
         }
 
         // Game over condition
@@ -110,7 +139,7 @@ public class GameWorld {
             gameOver = true;
         }
 
-        // If you still want “spawn over time” inside waves, keep this:
+        // If you want “spawn over time” inside waves, you can call:
         // updateSpawning(delta);
     }
 
@@ -118,17 +147,20 @@ public class GameWorld {
     public void restart() {
         gameOver = false;
 
-        // Player
-        player = new Player(100, 100, 200, 32, 32);
+        // Ensure player exists and is "fresh"
+        // (Player has no setHealth(), so the simplest reliable reset is to recreate it.)
+        ensurePlayerFresh();
 
         // Enemies
         enemies.clear();
-        enemies.add(new Enemy(200, 200, 100, 28, 3));
-        enemies.add(new Enemy(400, 300, 120, 28, 3));
-
-        // Bullets / weapon cooldown
         bullets.clear();
-        starterWeapon.setAttackCooldown(0f);
+
+        // Reset combat tuning
+        attackCooldown = 0f;
+        attackCooldownTime = 0.25f;
+        bulletSpeed = 240f;
+        bulletSize = 8f;
+        bulletDamage = 1;
 
         // Difficulty reset
         spawnTimer = 0f;
@@ -144,97 +176,25 @@ public class GameWorld {
 
         // Upgrades
         choosingUpgrade = false;
+        clearOfferedUpgrades();
     }
 
-    // -------------------- Combat / collisions --------------------
-    private void handlePlayerEnemyContact() {
-        for (Enemy enemy : enemies) {
-            boolean hit = overlaps(
-                player.getX(), player.getY(), player.getWidth(), player.getHeight(),
-                enemy.getX(), enemy.getY(), enemy.getWidth(), enemy.getHeight()
-            );
-
-            if (hit && !player.isInvulnerable()) {
-                player.takeDamage(1);
-
-                // Optional: small knockback (keeps you from sticking)
-                float px = player.getX() + player.getWidth() / 2f;
-                float py = player.getY() + player.getHeight() / 2f;
-                float ex = enemy.getX() + enemy.getWidth() / 2f;
-                float ey = enemy.getY() + enemy.getHeight() / 2f;
-
-                float dx = px - ex;
-                float dy = py - ey;
-                float len = (float)Math.sqrt(dx * dx + dy * dy);
-                if (len != 0) { dx /= len; dy /= len; }
-
-                player.clampToScreen(); // keep inside screen / room
-            }
-        }
+    private void ensurePlayer() {
+        if (player != null) return;
+        // Reasonable defaults; adjust if you prefer different starting stats/sizes
+        player = new Player(60, 60, 140f, 24f, 24f);
     }
 
-    private void tryShootAutoAim(float delta) {
-        // Cooldown ticking
-        if (starterWeapon.getAttackCooldown() > 0f) {
-            starterWeapon.setAttackCooldown(starterWeapon.getAttackCooldown() - delta);
-            if (starterWeapon.getAttackCooldown() < 0f) starterWeapon.setAttackCooldown(0f);
+    private void ensurePlayerFresh() {
+        // Recreate to reset health to its constructor defaults (5/5 in your Player class).
+        if (player == null) {
+            ensurePlayer();
+            return;
         }
-
-        if (starterWeapon.getAttackCooldown() > 0f) return;
-
-        Enemy target = getNearestEnemy();
-        if (target == null) return;
-
-        float px = player.getX() + player.getWidth() / 2f;
-        float py = player.getY() + player.getHeight() / 2f;
-
-        float tx = target.getX() + target.getWidth() / 2f;
-        float ty = target.getY() + target.getHeight() / 2f;
-
-        float dirX = tx - px;
-        float dirY = ty - py;
-
-        float bulletSpeed = 450f;
-        float bulletSize = 8f;
-
-        bullets.add(new Bullet(px - bulletSize / 2f, py - bulletSize / 2f, dirX, dirY, bulletSpeed, bulletSize));
-        starterWeapon.setAttackCooldown(starterWeapon.getAttackCooldownTime());
-    }
-
-    private void updateBullets() {
-        for (int i = bullets.size() - 1; i >= 0; i--) {
-            Bullet b = bullets.get(i);
-            b.update();
-
-            if (b.isOffScreen() || b.collidesWithRoom(room.getRoom(), room.getTileSize())) {
-                bullets.remove(i);
-                continue;
-            }
-
-            boolean hitEnemy = false;
-
-            for (Enemy e : enemies) {
-                if (overlaps(
-                    b.getX(), b.getY(), b.getWidth(), b.getHeight(),
-                    e.getX(), e.getY(), e.getWidth(), e.getHeight()
-                )) {
-                    e.takeDamage(1);
-                    hitEnemy = true;
-                    break;
-                }
-            }
-
-            if (hitEnemy) {
-                bullets.remove(i);
-                // Count & remove dead
-                for (int e = enemies.size() - 1; e >= 0; e--) {
-                    if (enemies.get(e).isDead()) {
-                        enemies.remove(e);
-                        enemiesKilled++;
-                    }
-                }
-            }
-        }
+        float w = player.getWidth();
+        float h = player.getHeight();
+        float spd = player.getSpeed();
+        player = new Player(60, 60, spd, w, h);
     }
 
     // -------------------- Waves / spawning --------------------
@@ -253,34 +213,50 @@ public class GameWorld {
 
     private void spawnEnemyWithSpeed(float speed) {
         if (enemies.size() >= maxEnemies) return;
+        if (player == null) ensurePlayer();
+        if (room == null) return;
 
-        for (int attempt = 0; attempt < 50; attempt++) {
-            int tx = MathUtils.random(0, room.getRoomWidth() - 1);
-            int ty = MathUtils.random(0, room.getRoomHeight() - 1);
+        int tileSize = room.getTileSize();
 
-            if (room.getTile(tx, ty) != 0) continue; // must be floor
+        // Use room pixel bounds (NOT Gdx.graphics.getWidth/Height) so this matches your virtual room
+        float roomPixelW = room.getRoomWidth() * tileSize;
+        float roomPixelH = room.getRoomHeight() * tileSize;
 
-            float size = 28f;
-            float x = tx * room.getTileSize() + (room.getTileSize() - size) / 2f;
-            float y = ty * room.getTileSize() + (room.getTileSize() - size) / 2f;
+        // Try a bunch of random positions
+        for (int tries = 0; tries < 200; tries++) {
+            float size = 22f + rng.nextFloat() * 10f;
 
-            // don’t spawn on top of player
+            float x = rng.nextFloat() * (roomPixelW - size);
+            float y = rng.nextFloat() * (roomPixelH - size);
+
+            // Don’t spawn too close to player
             float px = player.getX() + player.getWidth() / 2f;
             float py = player.getY() + player.getHeight() / 2f;
             float ex = x + size / 2f;
             float ey = y + size / 2f;
+
             float dx = ex - px;
             float dy = ey - py;
-
             float minDist = 120f;
             if (dx * dx + dy * dy < minDist * minDist) continue;
+
+            // NEW: reject if enemy overlaps any wall tiles
+            if (rectHitsWall(x, y, size, size)) continue;
 
             enemies.add(new Enemy(x, y, speed, size, 3));
             return;
         }
+
+        // Fallback: scan for first valid open tile
+        float size = 28f;
+        float[] open = findFirstOpenSpot(size, 120f);
+        if (open != null) {
+            enemies.add(new Enemy(open[0], open[1], speed, size, 3));
+        }
+        // else: no spawn this time (room is too full / blocked)
     }
 
-    // (Optional) If you still want “spawns speed up over time”, keep this and call it from update()
+
     @SuppressWarnings("unused")
     private void updateSpawning(float delta) {
         difficultyTimer += delta;
@@ -296,12 +272,119 @@ public class GameWorld {
         }
     }
 
-    // -------------------- Upgrades --------------------
-    private void offerUpgrades() {
-        choosingUpgrade = true;
-        for (int i = 0; i < 3; i++) {
-            offeredUpgrades[i] = randomUpgrade();
+    // -------------------- Combat --------------------
+    private void tryShootAutoAim(float delta) {
+        attackCooldown -= delta;
+        if (attackCooldown > 0f) return;
+
+        Enemy target = getNearestEnemy();
+        if (target == null) return;
+
+        float px = player.getX() + player.getWidth() / 2f;
+        float py = player.getY() + player.getHeight() / 2f;
+        float ex = target.getX() + target.getWidth() / 2f;
+        float ey = target.getY() + target.getHeight() / 2f;
+
+        float dirX = ex - px;
+        float dirY = ey - py;
+
+        bullets.add(new Bullet(px, py, dirX, dirY, bulletSpeed, bulletSize));
+        attackCooldown = attackCooldownTime;
+    }
+
+    private void updateBullets() {
+        if (room == null) return;
+
+        int[][] grid = room.getRoom();
+        int tileSize = room.getTileSize();
+
+        for (int i = bullets.size() - 1; i >= 0; i--) {
+            Bullet b = bullets.get(i);
+            if (b == null) {
+                bullets.remove(i);
+                continue;
+            }
+
+            b.update();
+
+            // Remove if hits wall tile
+            if (b.collidesWithRoom(grid, tileSize)) {
+                bullets.remove(i);
+                continue;
+            }
+
+            // Remove if off screen
+            if (b.isOffScreen()) {
+                bullets.remove(i);
+                continue;
+            }
+
+            // Bullet-enemy collisions
+            boolean hitEnemy = false;
+            for (int e = enemies.size() - 1; e >= 0; e--) {
+                Enemy enemy = enemies.get(e);
+                if (enemy == null) {
+                    enemies.remove(e);
+                    continue;
+                }
+
+                if (overlaps(b.getX(), b.getY(), b.getWidth(), b.getHeight(),
+                    enemy.getX(), enemy.getY(), enemy.getWidth(), enemy.getHeight())) {
+
+                    enemy.takeDamage(bulletDamage);
+                    hitEnemy = true;
+
+                    if (enemy.isDead()) {
+                        enemies.remove(e);
+                        enemiesKilled++;
+                    }
+                    break;
+                }
+            }
+
+            if (hitEnemy) {
+                bullets.remove(i);
+            }
         }
+    }
+
+    private void handlePlayerEnemyContact() {
+        if (player == null) return;
+
+        for (Enemy enemy : enemies) {
+            if (enemy == null) continue;
+
+            boolean hit = overlaps(
+                player.getX(), player.getY(), player.getWidth(), player.getHeight(),
+                enemy.getX(), enemy.getY(), enemy.getWidth(), enemy.getHeight()
+            );
+
+            if (hit && !player.isInvulnerable()) {
+                player.takeDamage(1);
+
+                // Small knockback so you don't "stick"
+                float px = player.getX() + player.getWidth() / 2f;
+                float py = player.getY() + player.getHeight() / 2f;
+                float ex = enemy.getX() + enemy.getWidth() / 2f;
+                float ey = enemy.getY() + enemy.getHeight() / 2f;
+
+                float dx = px - ex;
+                float dy = py - ey;
+                float len = (float) Math.sqrt(dx * dx + dy * dy);
+                if (len != 0f) { dx /= len; dy /= len; }
+
+                float push = 8f;
+                player.setX(player.getX() + dx * push);
+                player.setY(player.getY() + dy * push);
+                player.clampToScreen();
+            }
+        }
+    }
+
+    // -------------------- Upgrades --------------------
+    private void beginUpgradeChoice() {
+        choosingUpgrade = true;
+        generateOfferedUpgrades();
     }
 
     private void handleUpgradeInput() {
@@ -310,43 +393,62 @@ public class GameWorld {
         if (Gdx.input.isKeyJustPressed(Input.Keys.NUM_3)) applyUpgrade(offeredUpgrades[2]);
     }
 
+    private void generateOfferedUpgrades() {
+        // Simple: allow duplicates, but avoid nulls.
+        offeredUpgrades[0] = randomUpgrade();
+        offeredUpgrades[1] = randomUpgrade();
+        offeredUpgrades[2] = randomUpgrade();
+    }
+
+    private void clearOfferedUpgrades() {
+        offeredUpgrades[0] = null;
+        offeredUpgrades[1] = null;
+        offeredUpgrades[2] = null;
+    }
+
     private Upgrade randomUpgrade() {
-        int r = MathUtils.random(0, 4);
-        if (r == 0) return new Upgrade("Rapid Fire", "Fire rate +20%");
-        if (r == 1) return new Upgrade("Heavy Bullets", "Bullet damage +1");
-        if (r == 2) return new Upgrade("Hot Rounds", "Bullet speed +20%");
-        if (r == 3) return new Upgrade("Runner", "Move speed +15%");
-        return new Upgrade("Vitality", "Max HP +1 and heal 1");
+        // Names here must match applyUpgrade() checks
+        int r = rng.nextInt(5);
+        if (r == 0) return new Upgrade("Rapid Fire", "Fire rate +20%", cardTexture);
+        if (r == 1) return new Upgrade("Runner", "Move speed +15%", cardTexture);
+        if (r == 2) return new Upgrade("Vitality", "Max HP +1 and heal 1", cardTexture);
+        if (r == 3) return new Upgrade("Extra Damage", "Bullet damage +1", cardTexture);
+        return new Upgrade("Projectile Speed", "Bullet speed +20%", cardTexture);
     }
 
     private void applyUpgrade(Upgrade u) {
-        if (u == null) return;
+        if (u == null || player == null) return;
 
         if (u.name.equals("Rapid Fire")) {
-            starterWeapon.setAttackCooldownTime(Math.max(0.05f, starterWeapon.getAttackCooldownTime() * 0.8f));
+            attackCooldownTime = Math.max(0.05f, attackCooldownTime * 0.8f);
         } else if (u.name.equals("Runner")) {
             player.setSpeed(player.getSpeed() * 1.15f);
         } else if (u.name.equals("Vitality")) {
             player.increaseMaxHealth(1);
             player.heal(1);
+        } else if (u.name.equals("Extra Damage")) {
+            bulletDamage += 1;
+        } else if (u.name.equals("Projectile Speed")) {
+            bulletSpeed *= 1.2f;
         }
 
-        // (You can wire bullet damage/speed into Bullet/Weapon next)
-
         choosingUpgrade = false;
+        clearOfferedUpgrades();
     }
 
     // -------------------- Helpers --------------------
     private Enemy getNearestEnemy() {
-        if (enemies.isEmpty()) return null;
-
-        float px = player.getX() + player.getWidth() / 2f;
-        float py = player.getY() + player.getHeight() / 2f;
+        if (player == null) return null;
 
         Enemy best = null;
         float bestDist2 = Float.MAX_VALUE;
 
+        float px = player.getX() + player.getWidth() / 2f;
+        float py = player.getY() + player.getHeight() / 2f;
+
         for (Enemy e : enemies) {
+            if (e == null) continue;
+
             float ex = e.getX() + e.getWidth() / 2f;
             float ey = e.getY() + e.getHeight() / 2f;
 
@@ -371,4 +473,61 @@ public class GameWorld {
             ay < by + bh &&
             ay + ah > by;
     }
+
+    private boolean rectHitsWall(float x, float y, float w, float h) {
+        int[][] grid = room.getRoom();
+        int tileSize = room.getTileSize();
+
+        int roomW = room.getRoomWidth();
+        int roomH = room.getRoomHeight();
+
+        // Compute tile indices covered by the rect
+        int left = clamp((int)(x / tileSize), 0, roomW - 1);
+        int right = clamp((int)((x + w - 1) / tileSize), 0, roomW - 1);
+        int bottom = clamp((int)(y / tileSize), 0, roomH - 1);
+        int top = clamp((int)((y + h - 1) / tileSize), 0, roomH - 1);
+
+        for (int ty = bottom; ty <= top; ty++) {
+            for (int tx = left; tx <= right; tx++) {
+                if (grid[ty][tx] == 1) return true;
+            }
+        }
+        return false;
+    }
+
+    private float[] findFirstOpenSpot(float size, float minDistFromPlayer) {
+        int tileSize = room.getTileSize();
+        int roomW = room.getRoomWidth();
+        int roomH = room.getRoomHeight();
+
+        float px = player.getX() + player.getWidth() / 2f;
+        float py = player.getY() + player.getHeight() / 2f;
+
+        // scan interior tiles (skip borders)
+        for (int ty = 1; ty < roomH - 1; ty++) {
+            for (int tx = 1; tx < roomW - 1; tx++) {
+                if (room.getTile(tx, ty) == 1) continue;
+
+                float x = tx * tileSize + (tileSize - size) / 2f;
+                float y = ty * tileSize + (tileSize - size) / 2f;
+
+                if (rectHitsWall(x, y, size, size)) continue;
+
+                float ex = x + size / 2f;
+                float ey = y + size / 2f;
+                float dx = ex - px;
+                float dy = ey - py;
+
+                if (dx * dx + dy * dy < minDistFromPlayer * minDistFromPlayer) continue;
+
+                return new float[]{x, y};
+            }
+        }
+        return null;
+    }
+
+    private static int clamp(int v, int lo, int hi) {
+        return Math.max(lo, Math.min(hi, v));
+    }
+
 }
