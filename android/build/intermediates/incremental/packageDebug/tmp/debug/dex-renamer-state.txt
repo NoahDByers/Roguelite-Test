@@ -1,0 +1,16 @@
+#Fri Dec 26 22:19:32 CST 2025
+path.4=classes1000.dex
+path.3=9/classes.dex
+path.2=0/classes.dex
+path.1=14/classes.dex
+path.0=classes.dex
+base.4=C\:\\Users\\noahd\\Documents\\My Games\\roguelite\\android\\build\\intermediates\\desugar_lib_dex\\debug\\l8DexDesugarLibDebug\\classes1000.dex
+base.3=C\:\\Users\\noahd\\Documents\\My Games\\roguelite\\android\\build\\intermediates\\dex\\debug\\mergeProjectDexDebug\\9\\classes.dex
+base.2=C\:\\Users\\noahd\\Documents\\My Games\\roguelite\\android\\build\\intermediates\\dex\\debug\\mergeProjectDexDebug\\0\\classes.dex
+base.1=C\:\\Users\\noahd\\Documents\\My Games\\roguelite\\android\\build\\intermediates\\dex\\debug\\mergeLibDexDebug\\14\\classes.dex
+base.0=C\:\\Users\\noahd\\Documents\\My Games\\roguelite\\android\\build\\intermediates\\dex\\debug\\mergeExtDexDebug\\classes.dex
+renamed.3=classes4.dex
+renamed.2=classes3.dex
+renamed.1=classes2.dex
+renamed.0=classes.dex
+renamed.4=classes5.dex

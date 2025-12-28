@@ -1,25 +1,18 @@
 package io.github.noahdbyers.roguelite;
 
 public class Room {
-    int[][] room = {
-        {1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1},
-        {1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
-        {1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
-        {1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
-        {1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
-        {1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
-        {1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
-        {1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
-        {1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
-        {1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
-        {1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
-        {1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
-        {1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
-        {1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
-        {1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1}
-    };
+    private int tileSize = 32;
+    private int roomWidth = 20; //tiles
+    private int roomHeight = 15; //tiles
+    int[][] room;
 
-    Room() {}
+
+    Room(int tileSize, int roomWidth, int roomHeight, int[][] room) {
+        this.tileSize = tileSize;
+        this.roomWidth = roomWidth;
+        this.roomHeight = roomHeight;
+        this.room = room;
+    }
 
     public int getTile(int x, int y) {
         return room[y][x];
@@ -27,4 +20,24 @@ public class Room {
     public int[][] getRoom() {
         return room;
     }
+    public void setTile(int x, int y, int newValue) {
+        room[y][x] = newValue;
+    }
+
+    public void setRoom(int[][] newRoom) {
+        this.room = newRoom;
+    }
+
+    public int getTileSize() {
+        return tileSize;
+    }
+
+    public int getRoomWidth() {
+        return roomWidth;
+    }
+
+    public int getRoomHeight() {
+        return roomHeight;
+    }
+
 }

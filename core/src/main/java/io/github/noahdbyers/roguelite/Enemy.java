@@ -3,8 +3,11 @@ package io.github.noahdbyers.roguelite;
 import com.badlogic.gdx.Gdx;
 
 public class Enemy extends Entity {
-    Enemy(float x, float y, float speed, float size) {
+    private int health;
+    Enemy(float x, float y, float speed, float size, int health) {
         super(x, y, speed, size, size);
+
+        this.health = health;
     }
 
     public void update(Player player, Room room, int tileSize) {
@@ -35,4 +38,12 @@ public class Enemy extends Entity {
         }
     }
     public void update() {}
+
+    public void takeDamage(int amount) {
+        health -= amount;
+    }
+
+    public boolean isDead() {
+        return health <= 0;
+    }
 }
