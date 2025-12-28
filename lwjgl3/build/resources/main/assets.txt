@@ -1,6 +1,10 @@
 com/badlogic/gdx/utils/lsans-15.fnt
 com/badlogic/gdx/utils/lsans-15.png
 libgdx.png
+play_button.png
+settings_button.png
+shop_button.png
+title_screen.png
 ui/font-list.fnt
 ui/font-subtitle.fnt
 ui/font-window.fnt

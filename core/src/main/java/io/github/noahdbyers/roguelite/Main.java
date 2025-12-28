@@ -27,15 +27,20 @@ public class Main extends ApplicationAdapter {
     private SpriteBatch spriteBatch;
     private BitmapFont font;
     private Texture upgradeCardTex;
+    private Texture titleScreenTex;
     private final GlyphLayout titleLayout = new GlyphLayout();
     private final GlyphLayout descLayout = new GlyphLayout();
     private GameWorld world;
-
+    private Texture playButtonTex;
+    private Texture settingsButtonTex;
+    private Texture shopButtonTex;
     // Optional: show which card is “selected” (1/2/3)
     private int selectedUpgradeIndex = -1;
-
     //Title screen bool
     private boolean titleScreen = true;
+    private Button play;
+    private Button settings;
+    private Button shop;
 
     // simple starter room
     private final int[][] starterRoom = {
@@ -75,7 +80,15 @@ public class Main extends ApplicationAdapter {
         Room room = new Room(32, 20, 15, starterRoom);
 
         // Make sure upgrade_card.png is in your assets folder
-        upgradeCardTex = new Texture("upgrade_card.png"); // <-- fixed missing semicolon
+        upgradeCardTex = new Texture("upgrade_card.png");
+        titleScreenTex = new Texture("title_screen.png");
+        playButtonTex = new Texture("play_button.png");
+        settingsButtonTex = new Texture("settings_button.png");
+        shopButtonTex = new Texture("shop_button.png");
+        play = new Button(10, 280, 300, 200, playButtonTex);
+        settings = new Button(10, 200, 150, 110, settingsButtonTex);
+        shop = new Button(150, 185, 150, 140, shopButtonTex);
+
 
         world = new GameWorld(room);
     }
@@ -87,13 +100,24 @@ public class Main extends ApplicationAdapter {
 
     @Override
     public void render() {
-        float delta = Gdx.graphics.getDeltaTime();
-        world.update(delta);
+        if (titleScreen) {
+            spriteBatch.begin();
 
-        ScreenUtils.clear(0.15f, 0.15f, 0.2f, 1f);
+            spriteBatch.draw(titleScreenTex, 0, 0, VIRTUAL_WIDTH, VIRTUAL_HEIGHT);
+            play.drawButton(spriteBatch);
+            settings.drawButton(spriteBatch);
+            shop.drawButton(spriteBatch);
+            spriteBatch.end();
+        }
+        else {
+            float delta = Gdx.graphics.getDeltaTime();
+            world.update(delta);
 
-        drawWorld();
-        drawUI();
+            ScreenUtils.clear(0.15f, 0.15f, 0.2f, 1f);
+
+            drawWorld();
+            drawUI();
+        }
     }
 
     private void drawWorld() {
@@ -308,6 +332,7 @@ public class Main extends ApplicationAdapter {
         spriteBatch.dispose();
         font.dispose();
         upgradeCardTex.dispose();
+        titleScreenTex.dispose();
     }
 
     private String clampWrappedTextToLines(String text, float width, int maxLines) {
@@ -354,6 +379,12 @@ public class Main extends ApplicationAdapter {
         }
 
         return result.toString();
+    }
+
+    public void drawTitleScreen() {
+        titleScreen = true;
+
+
     }
 
 }
