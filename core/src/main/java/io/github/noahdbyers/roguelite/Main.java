@@ -191,6 +191,7 @@ public class Main extends ApplicationAdapter {
     }
     public void drawTitleScreen() {
         titleScreen = true;
+        player.dispose();
     }
 
 }

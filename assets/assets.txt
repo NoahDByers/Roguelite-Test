@@ -16,6 +16,7 @@ com/badlogic/gdx/utils/lsans-15.fnt
 com/badlogic/gdx/utils/lsans-15.png
 general_assets.png
 libgdx.png
+player/idleDown.png
 title_screen.png
 ui/font-list.fnt
 ui/font-subtitle.fnt
