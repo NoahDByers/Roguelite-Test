@@ -55,15 +55,7 @@ public class UserInterface {
     // Layout
     private static final int UPGRADE_COUNT = 3;
     private static final float CARD_W = 170f;
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
     private static final float CARD_H = 300f;
-=======
-    private static final float CARD_H = 280f;
->>>>>>> Stashed changes
-=======
-    private static final float CARD_H = 280f;
->>>>>>> Stashed changes
     private static final float CARD_GAP = 18f;
     private static final float SELECT_LIFT = 10f;
 
