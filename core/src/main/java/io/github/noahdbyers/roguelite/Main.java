@@ -7,6 +7,7 @@ import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.g2d.TextureRegion;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
+import com.badlogic.gdx.utils.Align;
 import com.badlogic.gdx.utils.ScreenUtils;
 import com.badlogic.gdx.graphics.OrthographicCamera;
 import com.badlogic.gdx.utils.viewport.FitViewport;
@@ -41,13 +42,18 @@ public class Main extends ApplicationAdapter {
     private Texture upgradeCardTex;
     private Texture titleScreenBackgroundTex;
     private GameWorld world;
-    private boolean titleScreen = false;
+    private boolean titleScreen = true;
     private Texture uiBanners;
+    private Texture generalAssets;
     private TextureRegion uiBannerRegion;
     private Player player;
     private UserInterface UI;
     private ArrayList<Entity> entities;
     private Button playButton;
+    private Button settingsCogButton;
+    private Button marketButton;
+    private TextureRegion settingsCogRegion;
+    private TextureRegion flagBannerRegion;
 
     @Override
     public void create() {
@@ -65,8 +71,9 @@ public class Main extends ApplicationAdapter {
         shapeRenderer.setProjectionMatrix(camera.combined);
         spriteBatch.setProjectionMatrix(camera.combined);
         upgradeCardTex = new Texture("upgrade_card.png");
-        titleScreenBackgroundTex = new Texture("background.png");
+        titleScreenBackgroundTex = new Texture("title_screen.png");
 
+        generalAssets = new Texture("general_assets.png");
         uiBanners = new Texture("bannerSpritesheet.png");
         uiBannerRegion = new TextureRegion(uiBanners, 16, 16, 192, 275);
         Room room = new Room(32, 20, 15, starterRoom);
@@ -74,7 +81,18 @@ public class Main extends ApplicationAdapter {
         basicButtonTextures.add(new TextureRegion(uiBanners, 736, 16, 64, 26));
         basicButtonTextures.add(new TextureRegion(uiBanners, 816, 16, 64, 26));
         basicButtonTextures.add(new TextureRegion(uiBanners, 896, 16, 64, 26));
+        ArrayList<TextureRegion> settingsCogTextures = new ArrayList<TextureRegion>();
+        settingsCogTextures.add(new TextureRegion(generalAssets, 84, 372, 32, 32));
+        settingsCogTextures.add(new TextureRegion(generalAssets, 84, 404, 32, 32));
+        settingsCogTextures.add(new TextureRegion(generalAssets, 84, 404, 32, 32));
+        ArrayList<TextureRegion> marketButtonTextures = new ArrayList<TextureRegion>();
+        marketButtonTextures.add(new TextureRegion(generalAssets, 116, 372, 32, 32));
+        marketButtonTextures.add(new TextureRegion(generalAssets, 116, 404, 32, 32));
+        marketButtonTextures.add(new TextureRegion(generalAssets, 116, 404, 32, 32));
+        flagBannerRegion = new TextureRegion(generalAssets, 20, 292, 111, 32);
 
+        marketButton = new Button(205, 20, 80, 80, null, marketButtonTextures);
+        settingsCogButton = new Button(45, 20, 80, 80, null, settingsCogTextures);
         playButton = new Button(45, 360, 240, 80, "PLAY", basicButtonTextures);
         player = new Player(100, 100, 200, 32, 32);
         world = new GameWorld(room, player);
@@ -97,16 +115,24 @@ public class Main extends ApplicationAdapter {
         if (titleScreen) {
             spriteBatch.begin();
             spriteBatch.draw(titleScreenBackgroundTex, 0, 0, VIRTUAL_WIDTH, VIRTUAL_HEIGHT);
-            spriteBatch.draw(uiBannerRegion, 320, 120, 256, 320);
+            spriteBatch.draw(uiBannerRegion, 320, 20, 256, 420);
+            spriteBatch.draw(uiBannerRegion, 45, 105, 240, 230);
+            spriteBatch.draw(flagBannerRegion, 65, 300, 200, 60);
+            spriteBatch.draw(flagBannerRegion, 340, 400, 220, 60);
+            settingsCogButton.drawButton(spriteBatch);
             playButton.drawButton(spriteBatch);
+            marketButton.drawButton(spriteBatch);
+            font.draw(spriteBatch, "STATS", 115, 338, 100, Align.center, true);
+            font.draw(spriteBatch, "CLASS", 395, 438, 100, Align.center, true);
             spriteBatch.end();
         }
         else {
             float delta = Gdx.graphics.getDeltaTime();
             world.update(delta);
+            UI.drawQueue();
         }
 
-        UI.drawQueue();
+
     }
 
     @Override
@@ -117,6 +143,7 @@ public class Main extends ApplicationAdapter {
         upgradeCardTex.dispose();
         uiBanners.dispose();
         titleScreenBackgroundTex.dispose();
+        generalAssets.dispose();
     }
     public void drawTitleScreen() {
         titleScreen = true;

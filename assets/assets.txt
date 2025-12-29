@@ -2,6 +2,7 @@ background.png
 bannerSpritesheet.png
 com/badlogic/gdx/utils/lsans-15.fnt
 com/badlogic/gdx/utils/lsans-15.png
+general_assets.png
 libgdx.png
 play_button.png
 settings_button.png
