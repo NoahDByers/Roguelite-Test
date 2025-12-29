@@ -1,3 +1,13 @@
+BarIcon.png
+ClearIcon.png
+CoinIcon.png
+FullHPBar.png
+FullManaBar.png
+HeartIcon.png
+ManaBarIcon.png
+ManaIcon.png
+SkullIcon.png
+SoulIcon.png
 background.png
 bannerSpritesheet.png
 cemeteryFloor.png

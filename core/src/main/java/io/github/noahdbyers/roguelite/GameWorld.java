@@ -27,7 +27,8 @@ public class GameWorld {
     // Run stats / progression
     private boolean gameOver = false;
     private int enemiesKilled = 0;
-
+    private int coins = 0;
+    private int souls = 0;
     private int wave = 1;
     private boolean waveActive = false;
 
@@ -530,4 +531,6 @@ public class GameWorld {
         return Math.max(lo, Math.min(hi, v));
     }
 
+    public int getCoins() { return coins; }
+    public int getSouls() { return souls; }
 }

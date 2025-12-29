@@ -9,6 +9,9 @@ public class Player extends Entity {
     private int maxHealth = 5;
     private int health = 5;
 
+    //Currently using place holders
+    private int mana = health;
+    private int maxMana = maxHealth;
     private float invulnTimer = 0f;
     private float invulnDuration = 0.5f; //invincibility timer after being hit
     Player(float x, float y, float speed, float width, float height) {
@@ -64,6 +67,8 @@ public class Player extends Entity {
     public int getMaxHealth() {
         return maxHealth;
     }
+    public int getMana() { return mana; }
+    public int getMaxMana() { return maxMana; }
 
     public Facing getFacing() {
         return facing;
