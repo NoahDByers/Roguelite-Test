@@ -39,10 +39,27 @@ public class UserInterface {
     private final Color enemyColor = new Color(1f, 0f, 0f, 1f);
     private final Color bulletColor = new Color(1f, 1f, 0f, 1f);
 
+    //Initializing textures
+    private Texture uiBarBg = new Texture("BarIcon.png");
+    private Texture uiBarManaBg = new Texture("ManaBarIcon.png");
+    private Texture uiBarHealthFill = new Texture("FullHPBar.png");
+    private Texture uiBarManaFill = new Texture("FullManaBar.png");
+
+    private Texture iconHeart = new Texture("HeartIcon.png");
+    private Texture iconMana = new Texture("ManaIcon.png");
+    private Texture iconCoin = new Texture("CoinIcon.png");
+    private Texture iconSoul = new Texture("SoulIcon.png");
+    private Texture iconKill = new Texture("SkullIcon.png");
+    private Texture iconWave = new Texture("ClearIcon.png");
+
     // Layout
     private static final int UPGRADE_COUNT = 3;
     private static final float CARD_W = 170f;
+<<<<<<< Updated upstream
     private static final float CARD_H = 300f;
+=======
+    private static final float CARD_H = 280f;
+>>>>>>> Stashed changes
     private static final float CARD_GAP = 18f;
     private static final float SELECT_LIFT = 10f;
 
@@ -149,26 +166,29 @@ public class UserInterface {
         }
     }
 
-    // ----------------------------
-    // HUD
-    // ----------------------------
-
     private void drawHud() {
-        font.setColor(Color.WHITE);
-        font.getData().setScale(1.0f);
-
-        font.draw(spriteBatch, "Kills: " + world.getEnemiesKilled(), 10, height - 10);
-        font.draw(spriteBatch, "Wave: " + world.getWave(), 10, height - 35);
-
         Player p = world.getPlayer();
-        if (p != null) {
-            font.draw(spriteBatch, "HP: " + p.getHealth() + "/" + p.getMaxHealth(), 10, height - 60);
-        }
-    }
+        if (p == null) return;
 
-    // ----------------------------
-    // Upgrade screen
-    // ----------------------------
+        float startX = 140;
+        float startY = height - 448;
+        float rowGap = 20;
+
+        // Mana
+        drawManaBar(iconMana, uiBarManaBg, uiBarManaFill, startX + 45, startY + rowGap, p.getMana() / (float) p.getMaxMana());
+
+        // HP
+        drawHealthBar(iconHeart, uiBarBg, uiBarHealthFill, startX, startY, p.getHealth() / (float) p.getMaxHealth());
+
+        // Coins (pseudo bar)
+        drawSmallStat(iconCoin, startX + 405, 485, "     " + world.getCoins());
+        // Souls (pseudo bar)
+        drawSmallStat(iconSoul, startX + 425, 440, "" + world.getSouls());
+
+        // Kills / Wave (icon + number)
+        drawSmallStat(iconKill, startX - 148, 490, "  " + world.getEnemiesKilled());
+        drawSmallStat(iconWave, startX - 140, 450, "" + world.getWave());
+    }
 
     private void updateSelectionHighlight() {
         if (Gdx.input.isKeyPressed(Input.Keys.NUM_1)) selectedUpgradeIndex = 0;
@@ -285,8 +305,101 @@ public class UserInterface {
         return (s == null) ? "" : s;
     }
 
+    private void drawHealthBar(Texture icon, Texture frame, Texture fill, float x, float y, float percent) {
+        percent = Math.max(0f, Math.min(1f, percent));
+
+        // --- Sizes tuned to YOUR sprites ---
+        float iconSize = 70;
+
+        float frameW = 250;   // matches your BarIcon width
+        float frameH = 35;
+
+        float fillInsetX = 2;   // padding inside frame (left/right)
+        float fillInsetY = 2;
+
+        float fillMaxW = frameW - fillInsetX * 2;
+        float fillH = frameH - fillInsetY * 2;
+
+        // Pixel snap
+        x = Math.round(x);
+        y = Math.round(y);
+
+
+        float barX = x + iconSize + 6;
+        float barY = y - frameH + 2;
+        barX = Math.round(barX);
+        barY = Math.round(barY);
+
+        // Frame
+        spriteBatch.draw(frame, barX, barY, frameW, frameH);
+
+        // Fill (clipped, NOT stretched)
+        float filledW = Math.round(fillMaxW * percent);
+
+        if (filledW > 0) {
+            spriteBatch.draw(fill, barX + fillInsetX, barY + fillInsetY, filledW, fillH);
+        }
+        // Icon
+        spriteBatch.draw(icon, x + 100, y - iconSize, iconSize - 100, iconSize);
+
+    }
+    private void drawManaBar(Texture icon, Texture frame, Texture fill, float x, float y, float percent) {
+        percent = Math.max(0f, Math.min(1f, percent));
+
+        // --- Sizes tuned to YOUR sprites ---
+        float iconSize = 20;
+
+        float frameW = 250;   // matches your BarIcon width
+        float frameH = 25;
+
+        float fillInsetX = 28;   // padding inside frame (left/right)
+        float fillInsetY = 9;
+
+        float fillMaxW = frameW - fillInsetX * 2;
+        float fillH = frameH - fillInsetY * 2;
+
+        // Pixel snap
+        x = Math.round(x);
+        y = Math.round(y);
+
+
+        float barX = x + iconSize + 2;
+        float barY = y - frameH - 8;
+        barX = Math.round(barX);
+        barY = Math.round(barY);
+
+        // Frame
+        spriteBatch.draw(frame, barX, barY, frameW, frameH);
+
+        // Fill (clipped, NOT stretched)
+        float filledW = Math.round(fillMaxW * percent);
+
+        if (filledW > 0) {
+            spriteBatch.draw(fill, barX + fillInsetX + 2, barY + fillInsetY + 3, filledW, fillH);
+        }
+        // Icon
+        spriteBatch.draw(icon, x + 35, y - iconSize - 5, iconSize + 100, iconSize);
+
+    }
+    private void drawSmallStat(Texture icon, float x, float y, String value) {
+        float iconSize = 65;
+
+        spriteBatch.draw(icon, x + 5, y - iconSize + 3, iconSize + 100, iconSize);
+        font.draw(spriteBatch, value, x + iconSize - 10, y - iconSize / 2 + 8);
+    }
+
     public void dispose() {
         fallbackCardTexture.dispose();
         font.dispose();
+        uiBarBg.dispose();
+        uiBarHealthFill.dispose();
+        uiBarManaFill.dispose();
+        iconHeart.dispose();
+        iconMana.dispose();
+        iconCoin.dispose();
+        iconSoul.dispose();
+        iconKill.dispose();
+        iconWave.dispose();
+        uiBarManaBg.dispose();
     }
 }
