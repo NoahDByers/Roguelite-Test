@@ -33,11 +33,16 @@ public class Button {
     }
 
     public void drawButton(SpriteBatch spriteBatch) {
-        spriteBatch.draw(textures.get(currTextureIndex), x, y, width, height);
+        if (buttonText != null) {
+            spriteBatch.draw(textures.get(currTextureIndex), x, y, width, height);
 
-        font.getRegion().getTexture().setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
-        font.getData().setScale(3f);
-        font.draw(spriteBatch, buttonText, x, y + height/2 + 20f, width, Align.center, true);
+            font.getRegion().getTexture().setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
+            font.getData().setScale(3f);
+            font.draw(spriteBatch, buttonText, x, y + height / 2 + 20f, width, Align.center, true);
+        }
+        else {
+            spriteBatch.draw(textures.get(currTextureIndex), x, y, width, height);
+        }
     }
     public void detectClick() {
         currTextureIndex = 2;
