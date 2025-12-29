@@ -42,11 +42,14 @@ public class Main extends ApplicationAdapter {
     private BitmapFont font;
     private Texture upgradeCardTex;
     private Texture titleScreenBackgroundTex;
+    private Texture cemeteryTiles;
+    private Texture cemeteryFloor;
     private GameWorld world;
     private boolean titleScreen = true;
     private Texture uiBanners;
     private Texture generalAssets;
     private TextureRegion uiBannerRegion;
+    private Room room;
     private Player player;
     private UserInterface UI;
     private ArrayList<Entity> entities;
@@ -88,6 +91,11 @@ public class Main extends ApplicationAdapter {
         titleScreenBackgroundTex = new Texture("title_screen.png");
         generalAssets = new Texture("general_assets.png");
         uiBanners = new Texture("bannerSpritesheet.png");
+        cemeteryTiles = new Texture("cemeteryTiles.png");
+        cemeteryFloor = new Texture("cemeteryFloor.png");
+
+        //Creating the arraylists for different tilesets
+        ArrayList<TextureRegion> cemeteryTileset = new ArrayList<TextureRegion>();
 
         //Extracting texture regions from the sprite sheet
         uiBannerRegion = new TextureRegion(uiBanners, 16, 16, 192, 275);
@@ -101,6 +109,9 @@ public class Main extends ApplicationAdapter {
         Collections.addAll(marketButtonTextures, new TextureRegion(generalAssets, 116, 372, 32, 32),
             new TextureRegion(generalAssets, 116, 404, 32, 32),
             new TextureRegion(generalAssets, 116, 404, 32, 32));
+        Collections.addAll(cemeteryTileset,
+            new TextureRegion(cemeteryFloor, 80, 0, 15, 15),
+            new TextureRegion(cemeteryTiles, 33, 0, 32, 32));
 
         //Creating the button objects for the title screen
         marketButton = new Button(205, 20, 80, 80, null, marketButtonTextures);
@@ -111,7 +122,7 @@ public class Main extends ApplicationAdapter {
         Collections.addAll(titleScreenButtons, marketButton, settingsCogButton, playButton);
 
         //Creating the game assets
-        Room room = new Room(32, 20, 15, starterRoom);
+        room = new Room(32, 20, 15, starterRoom, cemeteryTileset);
         player = new Player(100, 100, 200, 32, 32);
         world = new GameWorld(room, player);
         entities = new ArrayList<Entity>();
@@ -151,7 +162,7 @@ public class Main extends ApplicationAdapter {
 
             if(playButton.isClicked(viewport)) {
                 playButton.setCurrTextureIndex(2);
-                
+
                 titleScreen = false;
             }
             font.draw(spriteBatch, "STATS", 115, 338, 100, Align.center, true);
@@ -169,6 +180,7 @@ public class Main extends ApplicationAdapter {
 
     @Override
     public void dispose() {
+        UI.dispose();
         shapeRenderer.dispose();
         spriteBatch.dispose();
         font.dispose();

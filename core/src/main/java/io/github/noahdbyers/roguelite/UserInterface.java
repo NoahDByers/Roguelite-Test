@@ -42,7 +42,7 @@ public class UserInterface {
     // Layout
     private static final int UPGRADE_COUNT = 3;
     private static final float CARD_W = 170f;
-    private static final float CARD_H = 240f;
+    private static final float CARD_H = 300f;
     private static final float CARD_GAP = 18f;
     private static final float SELECT_LIFT = 10f;
 
@@ -73,10 +73,12 @@ public class UserInterface {
     /** Call once per frame. */
     public void drawQueue() {
         if (world == null) return;
+        spriteBatch.begin();
+        drawWorldTilesSafe();
+        spriteBatch.end();
 
         // World (shapes)
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
-        drawWorldTilesSafe();
         drawEntitiesSafe();
         shapeRenderer.end();
 
@@ -118,14 +120,11 @@ public class UserInterface {
         Room room = world.getRoom();
         if (room == null) return;
 
-        shapeRenderer.setColor(wallColor);
         float ts = room.getTileSize();
 
         for (int y = 0; y < room.getRoomHeight(); y++) {
             for (int x = 0; x < room.getRoomWidth(); x++) {
-                if (room.getTile(x, y) == 1) {
-                    shapeRenderer.rect(x * ts, y * ts, ts, ts);
-                }
+                    spriteBatch.draw(room.getTextureRegion(room.getTile(x, y)), x * ts, y * ts, ts, ts);
             }
         }
     }
