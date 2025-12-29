@@ -1,11 +1,18 @@
 package io.github.noahdbyers.roguelite;
 
 import com.badlogic.gdx.Gdx;
+import com.badlogic.gdx.graphics.Texture;
+import com.badlogic.gdx.graphics.g2d.SpriteBatch;
+import com.badlogic.gdx.graphics.g2d.TextureRegion;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
+
+import java.util.ArrayList;
 
 public class Player extends Entity {
     public enum Facing { UP, DOWN, LEFT, RIGHT }
     private Facing facing = Facing.DOWN;
+    private ArrayList<TextureRegion> spritesList = new ArrayList<TextureRegion>();
+    private int spriteIndex = 0;
     private int maxHealth = 5;
     private int health = 5;
 
@@ -14,8 +21,23 @@ public class Player extends Entity {
     private int maxMana = maxHealth;
     private float invulnTimer = 0f;
     private float invulnDuration = 0.5f; //invincibility timer after being hit
+
+    //Instantiating and creating the textures that you need for player animations
+    private Texture idleDown = new Texture("player/idleDown.png");
+
+    //Storing the texture region index currently being rendered for this player
+    private float animTimer = 0f;
+    private boolean isMoving = false;
+    int currSpriteIndex = 0;
+    int direction = 2;
     Player(float x, float y, float speed, float width, float height) {
         super(x, y, speed, width, height);
+
+        //Cutting the idle sprite sheet into individual regions
+        spritesList.add(new TextureRegion(idleDown, 24, 18, 17,30));
+        spritesList.add(new TextureRegion(idleDown, 88, 19, 17, 30));
+        spritesList.add(new TextureRegion(idleDown, 152, 19, 17, 30));
+        spritesList.add(new TextureRegion(idleDown, 216, 19, 17, 30));
     }
 
     //Input Handling Methods
@@ -28,19 +50,34 @@ public class Player extends Entity {
         float moveX = 0;
         float moveY = 0;
 
+        if (Gdx.input.isKeyPressed(com.badlogic.gdx.Input.Keys.A) ||
+            Gdx.input.isKeyPressed(com.badlogic.gdx.Input.Keys.D) ||
+            Gdx.input.isKeyPressed(com.badlogic.gdx.Input.Keys.S) ||
+            Gdx.input.isKeyPressed(com.badlogic.gdx.Input.Keys.W)) {
+            isMoving = true;
+        }
+        else {
+            isMoving = false;
+        }
+
+
         if (Gdx.input.isKeyPressed(com.badlogic.gdx.Input.Keys.A)) {
+            direction = 0; //Left
             moveX -= getSpeed() * delta;
             facing = Facing.LEFT;
         }
         if (Gdx.input.isKeyPressed(com.badlogic.gdx.Input.Keys.D)) {
+            direction = 1; //Right
             moveX += getSpeed() * delta;
             facing = Facing.RIGHT;
         }
         if (Gdx.input.isKeyPressed(com.badlogic.gdx.Input.Keys.S)) {
+            direction = 2; //Down
             moveY -= getSpeed() * delta;
             facing = Facing.DOWN;
         }
         if (Gdx.input.isKeyPressed(com.badlogic.gdx.Input.Keys.W)) {
+            direction = 3; //Up
             moveY += getSpeed() * delta;
             facing = Facing.UP;
         }
@@ -120,12 +157,18 @@ public class Player extends Entity {
     }
 
     //This method is used to draw the player
-    @Override
-    public void draw(ShapeRenderer shapeRenderer) {
-        //Checking if the player is
-        if (isInvulnerable()) shapeRenderer.setColor(1, 1, 0, 1);
-        else shapeRenderer.setColor(0, 1, 0, 1);
+    public void draw(SpriteBatch spriteBatch, float delta) {
+        animTimer += delta;
 
-        shapeRenderer.rect(getX(), getY(), getWidth(), getHeight());
+        if(animTimer >= 0.20f) {
+            animTimer -= 0.20f; // Keeps it stable even if delta is a bit big
+            currSpriteIndex = (currSpriteIndex + 1) % spritesList.size();
+        }
+
+        spriteBatch.draw(spritesList.get(currSpriteIndex), getX(), getY(), 32f, 51f);
+    }
+
+    public void dispose() {
+        idleDown.dispose();
     }
 }

@@ -19,8 +19,6 @@ public class UserInterface {
     private final GameWorld world;
     private final ShapeRenderer shapeRenderer;
     private final SpriteBatch spriteBatch;
-
-    @SuppressWarnings("unused")
     private final ArrayList<Entity> entities;
 
     private final BitmapFont font = new BitmapFont();
@@ -97,6 +95,10 @@ public class UserInterface {
 
         // UI (sprites/text) — NO overlay
         spriteBatch.begin();
+        Player p = world.getPlayer();
+        if (p != null) {
+            p.draw(spriteBatch, Gdx.graphics.getDeltaTime());
+        }
 
         if (!world.isChoosingUpgrade()) {
             drawHud();
@@ -143,12 +145,6 @@ public class UserInterface {
     }
 
     private void drawEntitiesSafe() {
-        Player p = world.getPlayer();
-        if (p != null) {
-            shapeRenderer.setColor(p.isInvulnerable() ? playerInvulnColor : playerColor);
-            shapeRenderer.rect(p.getX(), p.getY(), p.getWidth(), p.getHeight());
-        }
-
         shapeRenderer.setColor(enemyColor);
         for (Enemy e : world.getEnemies()) {
             if (e == null) continue;
