@@ -1,10 +1,13 @@
 package io.github.noahdbyers.roguelite;
 
+import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.g2d.TextureRegion;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
+import com.badlogic.gdx.math.Vector3;
 import com.badlogic.gdx.utils.Align;
+import com.badlogic.gdx.utils.viewport.Viewport;
 
 import java.util.ArrayList;
 
@@ -26,10 +29,18 @@ public class Button {
         this.buttonText = buttonText;
         this.textures = textures;
     }
-    public void buttonHover() {
-        currTextureIndex = 1;
-        width += 20f;
-        height += 20f;
+    public boolean isHovered(Viewport viewport) {
+        Vector3 mouse = new Vector3(
+            Gdx.input.getX(),
+            Gdx.input.getY(),
+            0
+        );
+        viewport.unproject(mouse);
+
+        return mouse.x >= x &&
+                mouse.x <= x + width &&
+                mouse.y >= y &&
+                mouse.y <= y + height;
     }
 
     public void drawButton(SpriteBatch spriteBatch) {
@@ -44,8 +55,16 @@ public class Button {
             spriteBatch.draw(textures.get(currTextureIndex), x, y, width, height);
         }
     }
-    public void detectClick() {
-        currTextureIndex = 2;
+    public boolean isClicked(Viewport viewport) {
+        return isHovered(viewport) && Gdx.input.justTouched();
+    }
+
+    public void setCurrTextureIndex(int index) {
+        this.currTextureIndex = index;
+    }
+
+    public int getCurrTextureIndex() {
+        return currTextureIndex;
     }
 
 }

@@ -13,6 +13,7 @@ import com.badlogic.gdx.graphics.OrthographicCamera;
 import com.badlogic.gdx.utils.viewport.FitViewport;
 import com.badlogic.gdx.utils.viewport.Viewport;
 import java.util.ArrayList;
+import java.util.Collections;
 
 public class Main extends ApplicationAdapter {
     private final int[][] starterRoom = {
@@ -52,56 +53,74 @@ public class Main extends ApplicationAdapter {
     private Button playButton;
     private Button settingsCogButton;
     private Button marketButton;
+    private ArrayList<Button> titleScreenButtons;
     private TextureRegion settingsCogRegion;
     private TextureRegion flagBannerRegion;
 
     @Override
     public void create() {
+        //Creating the rendering tools
         shapeRenderer = new ShapeRenderer();
         spriteBatch = new SpriteBatch();
+
+        //Setting default font (text) settings
         font = new BitmapFont();
         font.getData().setScale(1.2f);
+        font.setColor(1f, 1f, 1f, 1f);
+
+        //Camera + viewport setup for proper scaling
         camera = new OrthographicCamera();
         viewport = new FitViewport(VIRTUAL_WIDTH, VIRTUAL_HEIGHT, camera);
         viewport.apply();
         camera.position.set(VIRTUAL_WIDTH / 2f, VIRTUAL_HEIGHT / 2f, 0);
         camera.update();
-        font.setColor(1f, 1f, 1f, 1f);
-
         shapeRenderer.setProjectionMatrix(camera.combined);
         spriteBatch.setProjectionMatrix(camera.combined);
+
+        //Instantiating and creating objects for various button texture groups and button objects
+        ArrayList<TextureRegion> marketButtonTextures = new ArrayList<TextureRegion>();
+        ArrayList<TextureRegion> basicButtonTextures = new ArrayList<TextureRegion>();
+        ArrayList<TextureRegion> settingsCogTextures = new ArrayList<TextureRegion>();
+        titleScreenButtons = new ArrayList<Button>();
+
+        //Creating the texture objects for the various textures and sprite sheets
         upgradeCardTex = new Texture("upgrade_card.png");
         titleScreenBackgroundTex = new Texture("title_screen.png");
-
         generalAssets = new Texture("general_assets.png");
         uiBanners = new Texture("bannerSpritesheet.png");
-        uiBannerRegion = new TextureRegion(uiBanners, 16, 16, 192, 275);
-        Room room = new Room(32, 20, 15, starterRoom);
-        ArrayList<TextureRegion> basicButtonTextures = new ArrayList<TextureRegion>();
-        basicButtonTextures.add(new TextureRegion(uiBanners, 736, 16, 64, 26));
-        basicButtonTextures.add(new TextureRegion(uiBanners, 816, 16, 64, 26));
-        basicButtonTextures.add(new TextureRegion(uiBanners, 896, 16, 64, 26));
-        ArrayList<TextureRegion> settingsCogTextures = new ArrayList<TextureRegion>();
-        settingsCogTextures.add(new TextureRegion(generalAssets, 84, 372, 32, 32));
-        settingsCogTextures.add(new TextureRegion(generalAssets, 84, 404, 32, 32));
-        settingsCogTextures.add(new TextureRegion(generalAssets, 84, 404, 32, 32));
-        ArrayList<TextureRegion> marketButtonTextures = new ArrayList<TextureRegion>();
-        marketButtonTextures.add(new TextureRegion(generalAssets, 116, 372, 32, 32));
-        marketButtonTextures.add(new TextureRegion(generalAssets, 116, 404, 32, 32));
-        marketButtonTextures.add(new TextureRegion(generalAssets, 116, 404, 32, 32));
-        flagBannerRegion = new TextureRegion(generalAssets, 20, 292, 111, 32);
 
+        //Extracting texture regions from the sprite sheet
+        uiBannerRegion = new TextureRegion(uiBanners, 16, 16, 192, 275);
+        flagBannerRegion = new TextureRegion(generalAssets, 20, 292, 111, 32);
+        Collections.addAll(basicButtonTextures, new TextureRegion(uiBanners, 816, 16, 64, 26),
+            new TextureRegion(uiBanners, 736, 16, 64, 26),
+            new TextureRegion(uiBanners, 896, 16, 64, 26));
+        Collections.addAll(settingsCogTextures, new TextureRegion(generalAssets, 84, 372, 32, 32),
+            new TextureRegion(generalAssets, 84, 404, 32, 32),
+            new TextureRegion(generalAssets, 84, 404, 32, 32));
+        Collections.addAll(marketButtonTextures, new TextureRegion(generalAssets, 116, 372, 32, 32),
+            new TextureRegion(generalAssets, 116, 404, 32, 32),
+            new TextureRegion(generalAssets, 116, 404, 32, 32));
+
+        //Creating the button objects for the title screen
         marketButton = new Button(205, 20, 80, 80, null, marketButtonTextures);
         settingsCogButton = new Button(45, 20, 80, 80, null, settingsCogTextures);
         playButton = new Button(45, 360, 240, 80, "PLAY", basicButtonTextures);
+
+        //Adding the buttons to the button arraylist
+        Collections.addAll(titleScreenButtons, marketButton, settingsCogButton, playButton);
+
+        //Creating the game assets
+        Room room = new Room(32, 20, 15, starterRoom);
         player = new Player(100, 100, 200, 32, 32);
         world = new GameWorld(room, player);
         entities = new ArrayList<Entity>();
+        UI = new UserInterface(VIRTUAL_WIDTH, VIRTUAL_HEIGHT, world, shapeRenderer, entities, spriteBatch);
+
+        //Adding all enemies, bullets, and the player to the entity list (aka render list)
         entities.add(player);
         entities.addAll(world.getEnemies());
         entities.addAll(world.getBullets());
-
-        UI = new UserInterface(VIRTUAL_WIDTH, VIRTUAL_HEIGHT, world, shapeRenderer, entities, spriteBatch);
     }
 
     @Override
@@ -119,9 +138,22 @@ public class Main extends ApplicationAdapter {
             spriteBatch.draw(uiBannerRegion, 45, 105, 240, 230);
             spriteBatch.draw(flagBannerRegion, 65, 300, 200, 60);
             spriteBatch.draw(flagBannerRegion, 340, 400, 220, 60);
-            settingsCogButton.drawButton(spriteBatch);
-            playButton.drawButton(spriteBatch);
-            marketButton.drawButton(spriteBatch);
+            for(Button b : titleScreenButtons) {
+                if(b.isHovered(viewport)) {
+                    b.setCurrTextureIndex(1);
+                }
+                else {
+                    b.setCurrTextureIndex(0);
+                }
+
+                b.drawButton(spriteBatch);
+            }
+
+            if(playButton.isClicked(viewport)) {
+                playButton.setCurrTextureIndex(2);
+                
+                titleScreen = false;
+            }
             font.draw(spriteBatch, "STATS", 115, 338, 100, Align.center, true);
             font.draw(spriteBatch, "CLASS", 395, 438, 100, Align.center, true);
             spriteBatch.end();
