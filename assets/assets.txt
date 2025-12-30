@@ -8,6 +8,10 @@ ManaBarIcon.png
 ManaIcon.png
 SkullIcon.png
 SoulIcon.png
+Zombie/Attack.png
+Zombie/Death.png
+Zombie/Idle.png
+Zombie/Walk.png
 background.png
 bannerSpritesheet.png
 cemeteryFloor.png

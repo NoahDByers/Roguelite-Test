@@ -30,14 +30,10 @@ public class UserInterface {
     // Visual highlight only (GameWorld applies upgrades)
     private int selectedUpgradeIndex = -1;
 
-    // World colors
-    private final Color wallColor = new Color(0.50f, 0.50f, 0.50f, 1f);
-    private final Color playerColor = new Color(0f, 1f, 0f, 1f);
-    private final Color playerInvulnColor = new Color(1f, 1f, 0f, 1f);
-    private final Color enemyColor = new Color(1f, 0f, 0f, 1f);
+    // Colors
     private final Color bulletColor = new Color(1f, 1f, 0f, 1f);
 
-    //Initializing textures
+    // UI textures
     private Texture uiBarBg = new Texture("BarIcon.png");
     private Texture uiBarManaBg = new Texture("ManaBarIcon.png");
     private Texture uiBarHealthFill = new Texture("FullHPBar.png");
@@ -57,11 +53,9 @@ public class UserInterface {
     private static final float CARD_GAP = 18f;
     private static final float SELECT_LIFT = 10f;
 
-    // --- Text box region INSIDE your card art (fractions of card size) ---
-    // These are tuned for the asset you showed (white box under the diamond).
-    // If you want to nudge it: tweak Y and H first.
+    // Text box region inside card
     private static final float BOX_X_FRAC = 0.18f;
-    private static final float BOX_Y_FRAC = 0.44f; // higher value = box moves UP; lower = DOWN
+    private static final float BOX_Y_FRAC = 0.44f;
     private static final float BOX_W_FRAC = 0.64f;
     private static final float BOX_H_FRAC = 0.22f;
 
@@ -84,21 +78,28 @@ public class UserInterface {
     /** Call once per frame. */
     public void drawQueue() {
         if (world == null) return;
+
+        float delta = Gdx.graphics.getDeltaTime();
+
+        // ----------------------------
+        // 1) WORLD (SpriteBatch): tiles + sprites (player + zombies)
+        // ----------------------------
         spriteBatch.begin();
         drawWorldTilesSafe();
+        drawSpritesSafe(delta);   // ✅ player + zombies drawn here
         spriteBatch.end();
 
-        // World (shapes)
+        // ----------------------------
+        // 2) WORLD (ShapeRenderer): bullets (and any debug shapes)
+        // ----------------------------
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
-        drawEntitiesSafe();
+        drawBulletsSafe();
         shapeRenderer.end();
 
-        // UI (sprites/text) — NO overlay
+        // ----------------------------
+        // 3) UI (SpriteBatch): HUD + upgrade menu + game over
+        // ----------------------------
         spriteBatch.begin();
-        Player p = world.getPlayer();
-        if (p != null) {
-            p.draw(spriteBatch, Gdx.graphics.getDeltaTime());
-        }
 
         if (!world.isChoosingUpgrade()) {
             drawHud();
@@ -128,9 +129,8 @@ public class UserInterface {
     }
 
     // ----------------------------
-    // World drawing (Shapes)
+    // World drawing (tiles)
     // ----------------------------
-
     private void drawWorldTilesSafe() {
         Room room = world.getRoom();
         if (room == null) return;
@@ -139,18 +139,38 @@ public class UserInterface {
 
         for (int y = 0; y < room.getRoomHeight(); y++) {
             for (int x = 0; x < room.getRoomWidth(); x++) {
-                    spriteBatch.draw(room.getTextureRegion(room.getTile(x, y)), x * ts, y * ts, ts, ts);
+                spriteBatch.draw(room.getTextureRegion(room.getTile(x, y)), x * ts, y * ts, ts, ts);
             }
         }
     }
 
-    private void drawEntitiesSafe() {
-        shapeRenderer.setColor(enemyColor);
-        for (Enemy e : world.getEnemies()) {
-            if (e == null) continue;
-            shapeRenderer.rect(e.getX(), e.getY(), e.getWidth(), e.getHeight());
+    // ----------------------------
+    // World drawing (sprites): player + zombies
+    // ----------------------------
+    private void drawSpritesSafe(float delta) {
+        // Player
+        Player p = world.getPlayer();
+        if (p != null) {
+            p.draw(spriteBatch, delta);
         }
 
+        // Enemies: draw zombies as sprites
+        for (Enemy e : world.getEnemies()) {
+            if (e == null) continue;
+
+            if (e instanceof Zombie) {
+                ((Zombie) e).draw(spriteBatch, delta);
+            } else {
+                // If you ever have non-zombie enemies, you can draw them later.
+                // For now, do nothing here (they could still be drawn as shapes if desired).
+            }
+        }
+    }
+
+    // ----------------------------
+    // World drawing (shapes): bullets
+    // ----------------------------
+    private void drawBulletsSafe() {
         shapeRenderer.setColor(bulletColor);
         for (Bullet b : world.getBullets()) {
             if (b == null) continue;
@@ -158,6 +178,9 @@ public class UserInterface {
         }
     }
 
+    // ----------------------------
+    // HUD
+    // ----------------------------
     private void drawHud() {
         Player p = world.getPlayer();
         if (p == null) return;
@@ -166,18 +189,12 @@ public class UserInterface {
         float startY = height - 448;
         float rowGap = 20;
 
-        // Mana
         drawManaBar(iconMana, uiBarManaBg, uiBarManaFill, startX + 45, startY + rowGap, p.getMana() / (float) p.getMaxMana());
-
-        // HP
         drawHealthBar(iconHeart, uiBarBg, uiBarHealthFill, startX, startY, p.getHealth() / (float) p.getMaxHealth());
 
-        // Coins (pseudo bar)
         drawSmallStat(iconCoin, startX + 405, 485, "     " + world.getCoins());
-        // Souls (pseudo bar)
         drawSmallStat(iconSoul, startX + 425, 440, "" + world.getSouls());
 
-        // Kills / Wave (icon + number)
         drawSmallStat(iconKill, startX - 148, 490, "  " + world.getEnemiesKilled());
         drawSmallStat(iconWave, startX - 140, 450, "" + world.getWave());
     }
@@ -204,7 +221,6 @@ public class UserInterface {
 
             spriteBatch.draw(tex, x, y, CARD_W, CARD_H);
 
-            // Press label (bottom-left of card)
             font.getData().setScale(0.85f);
             font.setColor(Color.BLACK);
             font.draw(spriteBatch, "Press " + (i + 1), x + 14, y + 26);
@@ -215,9 +231,6 @@ public class UserInterface {
         font.getData().setScale(1.0f);
     }
 
-    /**
-     * Draws the upgrade name/desc INSIDE the white text box region below the diamond.
-     */
     private void drawUpgradeCardTextInWhiteBox(Upgrade[] offered) {
         if (offered == null || offered.length < UPGRADE_COUNT) return;
 
@@ -225,7 +238,6 @@ public class UserInterface {
         float startX = (width - totalW) / 2f;
         float startY = (height - CARD_H) / 2f - 10f;
 
-        // Save font state
         float oldScaleX = font.getData().scaleX;
         float oldScaleY = font.getData().scaleY;
         Color oldColor = new Color(font.getColor());
@@ -237,36 +249,30 @@ public class UserInterface {
             float cardX = startX + i * (CARD_W + CARD_GAP);
             float cardY = startY + (i == selectedUpgradeIndex ? SELECT_LIFT : 0f);
 
-            // White box region inside the card
             float boxX = cardX + CARD_W * BOX_X_FRAC;
             float boxY = cardY + CARD_H * BOX_Y_FRAC;
             float boxW = CARD_W * BOX_W_FRAC;
             float boxH = CARD_H * BOX_H_FRAC;
 
-            // Title near top of the box
             font.setColor(Color.BLACK);
             font.getData().setScale(0.95f);
 
-            float titleY = boxY + boxH - 8f; // small padding from top edge
+            float titleY = boxY + boxH - 8f;
             layout.setText(font, safe(up.name), font.getColor(), boxW, Align.center, false);
             font.draw(spriteBatch, layout, boxX, titleY);
 
-            // Description below the title, wrapped within the box
             font.setColor(new Color(0.15f, 0.15f, 0.15f, 1f));
             font.getData().setScale(0.72f);
 
-            float descTopY = titleY - 18f; // spacing under title (tweak if needed)
+            float descTopY = titleY - 18f;
             layout.setText(font, safe(up.desc), font.getColor(), boxW, Align.center, true);
 
-            // If the wrapped description is taller than the box, this keeps it from spilling upward too much.
-            // (We draw from "top", so it will flow downward.)
             float maxDescTop = boxY + boxH - 26f;
             float clampedDescTop = Math.min(descTopY, maxDescTop);
 
             font.draw(spriteBatch, layout, boxX, clampedDescTop);
         }
 
-        // Restore font state
         font.getData().setScale(oldScaleX, oldScaleY);
         font.setColor(oldColor);
     }
@@ -274,7 +280,6 @@ public class UserInterface {
     // ----------------------------
     // Helpers
     // ----------------------------
-
     private void drawCenteredText(String text, float cx, float cy) {
         layout.setText(font, text, font.getColor(), 0, Align.left, false);
         font.draw(spriteBatch, layout, cx - layout.width / 2f, cy + layout.height / 2f);
@@ -283,10 +288,10 @@ public class UserInterface {
     private Texture getCardTextureSafe(Upgrade up) {
         if (up == null) return null;
         try {
-            return up.getCardTexture(); // preferred
+            return up.getCardTexture();
         } catch (Throwable ignored) {
             try {
-                return up.cardTexture; // fallback if public
+                return up.cardTexture;
             } catch (Throwable ignored2) {
                 return null;
             }
@@ -297,85 +302,73 @@ public class UserInterface {
         return (s == null) ? "" : s;
     }
 
+    // ----------------------------
+    // Bars / stats (unchanged)
+    // ----------------------------
     private void drawHealthBar(Texture icon, Texture frame, Texture fill, float x, float y, float percent) {
         percent = Math.max(0f, Math.min(1f, percent));
 
-        // --- Sizes tuned to YOUR sprites ---
         float iconSize = 70;
-
-        float frameW = 250;   // matches your BarIcon width
+        float frameW = 250;
         float frameH = 35;
 
-        float fillInsetX = 2;   // padding inside frame (left/right)
+        float fillInsetX = 2;
         float fillInsetY = 2;
 
         float fillMaxW = frameW - fillInsetX * 2;
         float fillH = frameH - fillInsetY * 2;
 
-        // Pixel snap
         x = Math.round(x);
         y = Math.round(y);
-
 
         float barX = x + iconSize + 6;
         float barY = y - frameH + 2;
         barX = Math.round(barX);
         barY = Math.round(barY);
 
-        // Frame
         spriteBatch.draw(frame, barX, barY, frameW, frameH);
 
-        // Fill (clipped, NOT stretched)
         float filledW = Math.round(fillMaxW * percent);
-
         if (filledW > 0) {
             spriteBatch.draw(fill, barX + fillInsetX, barY + fillInsetY, filledW, fillH);
         }
-        // Icon
-        spriteBatch.draw(icon, x + 100, y - iconSize, iconSize - 100, iconSize);
 
+        spriteBatch.draw(icon, x + 100, y - iconSize, iconSize - 100, iconSize);
     }
+
     private void drawManaBar(Texture icon, Texture frame, Texture fill, float x, float y, float percent) {
         percent = Math.max(0f, Math.min(1f, percent));
 
-        // --- Sizes tuned to YOUR sprites ---
         float iconSize = 20;
-
-        float frameW = 250;   // matches your BarIcon width
+        float frameW = 250;
         float frameH = 25;
 
-        float fillInsetX = 28;   // padding inside frame (left/right)
+        float fillInsetX = 28;
         float fillInsetY = 9;
 
         float fillMaxW = frameW - fillInsetX * 2;
         float fillH = frameH - fillInsetY * 2;
 
-        // Pixel snap
         x = Math.round(x);
         y = Math.round(y);
-
 
         float barX = x + iconSize + 2;
         float barY = y - frameH - 8;
         barX = Math.round(barX);
         barY = Math.round(barY);
 
-        // Frame
         spriteBatch.draw(frame, barX, barY, frameW, frameH);
 
-        // Fill (clipped, NOT stretched)
         float filledW = Math.round(fillMaxW * percent);
-
         if (filledW > 0) {
             spriteBatch.draw(fill, barX + fillInsetX + 2, barY + fillInsetY + 3, filledW, fillH);
         }
-        // Icon
-        spriteBatch.draw(icon, x + 35, y - iconSize - 5, iconSize + 100, iconSize);
 
+        spriteBatch.draw(icon, x + 35, y - iconSize - 5, iconSize + 100, iconSize);
     }
+
     private void drawSmallStat(Texture icon, float x, float y, String value) {
         float iconSize = 65;
-
         spriteBatch.draw(icon, x + 5, y - iconSize + 3, iconSize + 100, iconSize);
         font.draw(spriteBatch, value, x + iconSize - 10, y - iconSize / 2 + 8);
     }
@@ -383,15 +376,17 @@ public class UserInterface {
     public void dispose() {
         fallbackCardTexture.dispose();
         font.dispose();
+
         uiBarBg.dispose();
         uiBarHealthFill.dispose();
         uiBarManaFill.dispose();
+        uiBarManaBg.dispose();
+
         iconHeart.dispose();
         iconMana.dispose();
         iconCoin.dispose();
         iconSoul.dispose();
         iconKill.dispose();
         iconWave.dispose();
-        uiBarManaBg.dispose();
     }
 }
