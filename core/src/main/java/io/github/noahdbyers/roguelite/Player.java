@@ -225,7 +225,9 @@ public class Player extends Entity {
 
         for (int ty = bottomTile; ty <= topTile; ty++) {
             for (int tx = leftTile; tx <= rightTile; tx++) {
-                if (grid[ty][tx] == 1) return true;
+                if (grid[ty][tx] == 1 || grid[ty][tx] == 2 || grid[ty][tx] == 3 || grid[ty][tx] == 4 || grid[ty][tx] == 5) {
+                    return true;
+                }
             }
         }
         return false;

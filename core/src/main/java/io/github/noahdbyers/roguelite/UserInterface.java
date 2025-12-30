@@ -9,6 +9,7 @@ import com.badlogic.gdx.graphics.g2d.GlyphLayout;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.utils.Align;
+import com.badlogic.gdx.graphics.g2d.TextureRegion;
 
 import java.util.ArrayList;
 
@@ -87,6 +88,14 @@ public class UserInterface {
         spriteBatch.begin();
         drawWorldTilesSafe();
         drawSpritesSafe(delta);   // ✅ player + zombies drawn here
+        Player p = world.getPlayer();
+        if (p != null) {
+            p.draw(spriteBatch, Gdx.graphics.getDeltaTime());
+        }
+
+        // ✅ draw the weapon/book after player (so it appears on top)
+        drawWeaponBook();
+
         spriteBatch.end();
 
         // ----------------------------
@@ -371,6 +380,41 @@ public class UserInterface {
         float iconSize = 65;
         spriteBatch.draw(icon, x + 5, y - iconSize + 3, iconSize + 100, iconSize);
         font.draw(spriteBatch, value, x + iconSize - 10, y - iconSize / 2 + 8);
+    }
+
+    private void drawWeaponBook() {
+        if (world == null) return;
+
+        Weapon w = world.getWeapon();
+        Player p = world.getPlayer();
+        if (w == null || p == null) return;
+
+        TextureRegion book = w.getWeaponTexture();
+        if (book == null) return;
+
+        float[] pos = world.getBookWorldPos(32f); // distance from player
+        float bx = pos[0];
+        float by = pos[1];
+
+        // Draw size (world units). Tweak to taste.
+        float drawW = 24f;
+        float drawH = 24f;
+
+        // Center the sprite on the spawn point
+        float x = bx - drawW / 2f;
+        float y = by - drawH / 2f;
+
+        // Optional rotation so it “faces” aim direction
+        float angle = world.getAimAngleDeg();
+
+        spriteBatch.draw(
+            book,
+            x, y,
+            drawW / 2f, drawH / 2f,   // origin for rotation (center)
+            drawW, drawH,
+            1f, 1f,
+            angle
+        );
     }
 
     public void dispose() {

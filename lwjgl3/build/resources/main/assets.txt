@@ -14,8 +14,8 @@ Zombie/Idle.png
 Zombie/Walk.png
 background.png
 bannerSpritesheet.png
-cemeteryFloor.png
-cemeteryTiles.png
+cemetery/cemeteryFloor.png
+cemetery/cemeteryTiles.png
 com/badlogic/gdx/utils/lsans-15.fnt
 com/badlogic/gdx/utils/lsans-15.png
 general_assets.png
@@ -31,3 +31,4 @@ ui/uiskin.atlas
 ui/uiskin.json
 ui/uiskin.png
 upgrade_card.png
+weapons/iceWeapons.png
