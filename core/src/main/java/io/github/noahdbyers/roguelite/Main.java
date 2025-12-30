@@ -280,13 +280,14 @@ public class Main extends ApplicationAdapter {
     @Override
     public void dispose() {
         if (UI != null) UI.dispose();
+        if (world != null) world.dispose(); // make sure GameWorld has a dispose()
         if (player != null) player.dispose();
-        if (world != null) world.dispose();
 
         shapeRenderer.dispose();
         spriteBatch.dispose();
         font.dispose();
 
+        world.dispose();
         uiBanners.dispose();
         titleScreenBackgroundTex.dispose();
         generalAssets.dispose();
@@ -294,8 +295,12 @@ public class Main extends ApplicationAdapter {
         cemeteryTiles.dispose();
         cemeteryFloor.dispose();
 
-        if (audio != null) audio.dispose();
+        Zombie.disposeShared(); // if you’re using shared zombie textures
+        audio.dispose(); // if you have a singleton
+
+        System.out.println("Main dispose called");
     }
+
 
     public void drawTitleScreen() {
         titleScreen = true;

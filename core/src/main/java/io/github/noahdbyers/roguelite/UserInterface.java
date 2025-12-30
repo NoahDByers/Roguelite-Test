@@ -443,5 +443,7 @@ public class UserInterface {
         iconSoul.dispose();
         iconKill.dispose();
         iconWave.dispose();
+
+        System.out.println("World dispose called");
     }
 }

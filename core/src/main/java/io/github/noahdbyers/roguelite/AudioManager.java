@@ -76,5 +76,8 @@ public class AudioManager {
         if (sfxHit != null) sfxHit.dispose();
         if (sfxUIClick != null) sfxUIClick.dispose();
         if (musicMain != null) musicMain.dispose();
+        if (musicCemetery != null)  { musicCemetery.stop();  musicCemetery.dispose();  musicCemetery = null; }
+
+        System.out.println("Audio dispose called");
     }
 }

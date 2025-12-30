@@ -4,7 +4,7 @@
             "outputFile": "io.github.noahdbyers.roguelite.android-mergeDebugResources-10:/values-ms/values-ms.xml",
             "map": [
                 {
-                    "source": "C:\\Users\\noahd\\.gradle\\caches\\9.2.1\\transforms\\64b45e2112f18b3fa30c85f320725923\\workspace\\transformed\\core-1.15.0\\res\\values-ms\\values-ms.xml",
+                    "source": "C:\\Users\\noahd\\.gradle\\caches\\9.2.1\\transforms\\01ea25204bc360f3ad7bf4123fe043f6\\workspace\\transformed\\core-1.15.0\\res\\values-ms\\values-ms.xml",
                     "from": {
                         "startLines": "2,3,4,5,6,7,8,9",
                         "startColumns": "4,4,4,4,4,4,4,4",
