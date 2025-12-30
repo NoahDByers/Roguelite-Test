@@ -26,7 +26,7 @@ public class UserInterface {
     private final GlyphLayout layout = new GlyphLayout();
 
     // Fallback card art (loaded once)
-    private final Texture fallbackCardTexture = new Texture("upgrade_card.png");
+    private final Texture fallbackCardTexture = new Texture("ui/upgrade_card.png");
 
     // Visual highlight only (GameWorld applies upgrades)
     private int selectedUpgradeIndex = -1;
@@ -35,17 +35,17 @@ public class UserInterface {
     private final Color bulletColor = new Color(1f, 1f, 0f, 1f);
 
     // UI textures
-    private Texture uiBarBg = new Texture("BarIcon.png");
-    private Texture uiBarManaBg = new Texture("ManaBarIcon.png");
-    private Texture uiBarHealthFill = new Texture("FullHPBar.png");
-    private Texture uiBarManaFill = new Texture("FullManaBar.png");
+    private Texture uiBarBg = new Texture("ui/BarIcon.png");
+    private Texture uiBarManaBg = new Texture("ui/ManaBarIcon.png");
+    private Texture uiBarHealthFill = new Texture("ui/FullHPBar.png");
+    private Texture uiBarManaFill = new Texture("ui/FullManaBar.png");
 
-    private Texture iconHeart = new Texture("HeartIcon.png");
-    private Texture iconMana = new Texture("ManaIcon.png");
-    private Texture iconCoin = new Texture("CoinIcon.png");
-    private Texture iconSoul = new Texture("SoulIcon.png");
-    private Texture iconKill = new Texture("SkullIcon.png");
-    private Texture iconWave = new Texture("ClearIcon.png");
+    private Texture iconHeart = new Texture("ui/HeartIcon.png");
+    private Texture iconMana = new Texture("ui/ManaIcon.png");
+    private Texture iconCoin = new Texture("ui/CoinIcon.png");
+    private Texture iconSoul = new Texture("ui/SoulIcon.png");
+    private Texture iconKill = new Texture("ui/SkullIcon.png");
+    private Texture iconWave = new Texture("ui/ClearIcon.png");
 
     // Layout
     private static final int UPGRADE_COUNT = 3;
@@ -415,6 +415,10 @@ public class UserInterface {
             1f, 1f,
             angle
         );
+    }
+
+    public SpriteBatch getSpriteBatch() {
+        return spriteBatch;
     }
 
     public void dispose() {

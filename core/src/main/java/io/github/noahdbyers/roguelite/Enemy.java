@@ -78,6 +78,7 @@ public class Enemy extends Entity {
     }
 
     public void takeDamage(int amount) {
+
         health -= amount;
     }
 

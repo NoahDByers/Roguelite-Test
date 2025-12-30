@@ -78,6 +78,10 @@ public class Main extends ApplicationAdapter {
     //Creating the weapon objects
     private Weapon magicBookWeapon;
 
+    //Creating the audio manager
+    private AudioManager audio;
+
+
     @Override
     public void create() {
         shapeRenderer = new ShapeRenderer();
@@ -94,13 +98,18 @@ public class Main extends ApplicationAdapter {
         camera.update();
 
         // Load textures (once)
-        titleScreenBackgroundTex = new Texture("title_screen.png");
-        generalAssets = new Texture("general_assets.png");
-        uiBanners = new Texture("bannerSpritesheet.png");
+        titleScreenBackgroundTex = new Texture("ui/title_screen.png");
+        generalAssets = new Texture("ui/general_assets.png");
+        uiBanners = new Texture("ui/bannerSpritesheet.png");
         iceWeaponSheet = new Texture("weapons/iceWeapons.png");
 
         cemeteryTiles = new Texture("cemetery/cemeteryTiles.png");
         cemeteryFloor = new Texture("cemetery/cemeteryFloor.png");
+
+        //Load audio
+        audio = new AudioManager();
+        audio.load();
+        audio.startMainMusic(); // start title music (or keep it off until play)
 
         // Pixel art settings (helps, but seams are mostly from fractional scaling)
         cemeteryTiles.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
@@ -181,7 +190,8 @@ public class Main extends ApplicationAdapter {
         room = new Room(32, 20, 15, starterRoom, makeCemeteryTileset());
         room.setViewport(viewport);
         player = new Player(100, 100, 200, 32, 32);
-        world = new GameWorld(room, player);
+        world = new GameWorld(room, player, spriteBatch);
+        world.setAudio(audio);
         world.setWeapon(magicBookWeapon);
 
 
@@ -243,8 +253,11 @@ public class Main extends ApplicationAdapter {
 
             if (playButton.isClicked(viewport)) {
                 playButton.setCurrTextureIndex(2);
+                audio.playUIClick();
+                audio.stopMainMusic();
                 startNewRun();
                 titleScreen = false;
+                audio.startGameMusic();
             }
 
             font.draw(spriteBatch, "STATS", 115, 338, 100, Align.center, true);
@@ -280,6 +293,8 @@ public class Main extends ApplicationAdapter {
 
         cemeteryTiles.dispose();
         cemeteryFloor.dispose();
+
+        if (audio != null) audio.dispose();
     }
 
     public void drawTitleScreen() {
