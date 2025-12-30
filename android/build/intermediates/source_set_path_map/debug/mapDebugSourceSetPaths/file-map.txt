@@ -1,15 +1,16 @@
-io.github.noahdbyers.roguelite.android-lifecycle-runtime-2.6.2-0 C:\Users\noahd\.gradle\caches\9.2.1\transforms\295f18323970f16b77ee97ee2d697bf6\workspace\transformed\lifecycle-runtime-2.6.2\res
-io.github.noahdbyers.roguelite.android-startup-runtime-1.1.1-1 C:\Users\noahd\.gradle\caches\9.2.1\transforms\46a776343d51fd5e8944b64b5bb7a683\workspace\transformed\startup-runtime-1.1.1\res
-io.github.noahdbyers.roguelite.android-tracing-1.2.0-2 C:\Users\noahd\.gradle\caches\9.2.1\transforms\47f3ca53b86302b2f690a76f4a3e25d8\workspace\transformed\tracing-1.2.0\res
-io.github.noahdbyers.roguelite.android-profileinstaller-1.3.0-3 C:\Users\noahd\.gradle\caches\9.2.1\transforms\502a9a72494e080ffdceebf2fe57de23\workspace\transformed\profileinstaller-1.3.0\res
-io.github.noahdbyers.roguelite.android-core-1.15.0-4 C:\Users\noahd\.gradle\caches\9.2.1\transforms\64b45e2112f18b3fa30c85f320725923\workspace\transformed\core-1.15.0\res
-io.github.noahdbyers.roguelite.android-core-runtime-2.2.0-5 C:\Users\noahd\.gradle\caches\9.2.1\transforms\6bf83acdaff257fe9c0013dabd2292c1\workspace\transformed\core-runtime-2.2.0\res
-io.github.noahdbyers.roguelite.android-gdx-backend-android-1.14.0-6 C:\Users\noahd\.gradle\caches\9.2.1\transforms\f356238f8bde9f0a200d0871a05b6e5e\workspace\transformed\gdx-backend-android-1.14.0\res
-io.github.noahdbyers.roguelite.android-annotation-experimental-1.4.1-7 C:\Users\noahd\.gradle\caches\9.2.1\transforms\fab68d59a60710d8d3e66ce809e09cd7\workspace\transformed\annotation-experimental-1.4.1\res
-io.github.noahdbyers.roguelite.android-pngs-8 C:\Users\noahd\Documents\My Games\roguelite\android\build\generated\res\pngs\debug
-io.github.noahdbyers.roguelite.android-resValues-9 C:\Users\noahd\Documents\My Games\roguelite\android\build\generated\res\resValues\debug
-io.github.noahdbyers.roguelite.android-packageDebugResources-10 C:\Users\noahd\Documents\My Games\roguelite\android\build\intermediates\incremental\debug\packageDebugResources\merged.dir
-io.github.noahdbyers.roguelite.android-packageDebugResources-11 C:\Users\noahd\Documents\My Games\roguelite\android\build\intermediates\incremental\debug\packageDebugResources\stripped.dir
-io.github.noahdbyers.roguelite.android-debug-12 C:\Users\noahd\Documents\My Games\roguelite\android\build\intermediates\merged_res\debug\mergeDebugResources
-io.github.noahdbyers.roguelite.android-android-13 C:\Users\noahd\Documents\My Games\roguelite\android\res
-io.github.noahdbyers.roguelite.android-debug-14 C:\Users\noahd\Documents\My Games\roguelite\android\src\debug\res
+io.github.noahdbyers.roguelite.android-core-1.15.0-0 C:\Users\noahd\.gradle\caches\9.2.1\transforms\01ea25204bc360f3ad7bf4123fe043f6\workspace\transformed\core-1.15.0\res
+io.github.noahdbyers.roguelite.android-startup-runtime-1.1.1-1 C:\Users\noahd\.gradle\caches\9.2.1\transforms\0355f1b974f7edbf7bee86d31c8ab11d\workspace\transformed\startup-runtime-1.1.1\res
+io.github.noahdbyers.roguelite.android-gdx-backend-android-1.14.0-2 C:\Users\noahd\.gradle\caches\9.2.1\transforms\1eaf8a8e628c7e9981f7fbf6c077799f\workspace\transformed\gdx-backend-android-1.14.0\res
+io.github.noahdbyers.roguelite.android-lifecycle-runtime-2.6.2-3 C:\Users\noahd\.gradle\caches\9.2.1\transforms\41387fe0ec60b3a043d356c8d0dcdab2\workspace\transformed\lifecycle-runtime-2.6.2\res
+io.github.noahdbyers.roguelite.android-tracing-1.2.0-4 C:\Users\noahd\.gradle\caches\9.2.1\transforms\5ea376a34b647728a4cab39829f0d29a\workspace\transformed\tracing-1.2.0\res
+io.github.noahdbyers.roguelite.android-annotation-experimental-1.4.1-5 C:\Users\noahd\.gradle\caches\9.2.1\transforms\6b950ea799e761b1122905ba0840af62\workspace\transformed\annotation-experimental-1.4.1\res
+io.github.noahdbyers.roguelite.android-core-runtime-2.2.0-6 C:\Users\noahd\.gradle\caches\9.2.1\transforms\8dfddbd2d1f0ff3037e6d36a80573e1c\workspace\transformed\core-runtime-2.2.0\res
+io.github.noahdbyers.roguelite.android-profileinstaller-1.3.0-7 C:\Users\noahd\.gradle\caches\9.2.1\transforms\a3f01e5d723a9ab08c6514431872835a\workspace\transformed\profileinstaller-1.3.0\res
+io.github.noahdbyers.roguelite.android-pngs-8 C:\Users\noahd\Desktop\roguelite\roguelite\android\build\generated\res\pngs\debug
+io.github.noahdbyers.roguelite.android-resValues-9 C:\Users\noahd\Desktop\roguelite\roguelite\android\build\generated\res\resValues\debug
+io.github.noahdbyers.roguelite.android-updated_navigation_xml-10 C:\Users\noahd\Desktop\roguelite\roguelite\android\build\generated\updated_navigation_xml\debug
+io.github.noahdbyers.roguelite.android-packageDebugResources-11 C:\Users\noahd\Desktop\roguelite\roguelite\android\build\intermediates\incremental\debug\packageDebugResources\merged.dir
+io.github.noahdbyers.roguelite.android-packageDebugResources-12 C:\Users\noahd\Desktop\roguelite\roguelite\android\build\intermediates\incremental\debug\packageDebugResources\stripped.dir
+io.github.noahdbyers.roguelite.android-debug-13 C:\Users\noahd\Desktop\roguelite\roguelite\android\build\intermediates\merged_res\debug\mergeDebugResources
+io.github.noahdbyers.roguelite.android-android-14 C:\Users\noahd\Desktop\roguelite\roguelite\android\res
+io.github.noahdbyers.roguelite.android-debug-15 C:\Users\noahd\Desktop\roguelite\roguelite\android\src\debug\res

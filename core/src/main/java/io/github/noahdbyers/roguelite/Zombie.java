@@ -27,8 +27,8 @@ public class Zombie extends Enemy {
     private static final float FRAME_TIME = 0.20f;
     private int frameIndex = 0;
 
-    public Zombie(float x, float y, float speed, float size, int health) {
-        super(x, y, speed, size, health);
+    public Zombie(float x, float y, float speed, float width, float height, int health) {
+        super(x, y, speed, width, height, health);
 
         // Load/build frames once for all zombies
         ensureAssetsLoaded();
@@ -116,7 +116,14 @@ public class Zombie extends Enemy {
         // If you want to enforce consistent on-screen size:
         float drawW = 32f;
         float drawH = 52f;
+
+        if(isFlashing()) {
+            spriteBatch.setColor(1f, 0.4f, 0.4f, 1f); // red
+        }
+
         spriteBatch.draw(frame, getX(), getY(), drawW, drawH);
+
+        spriteBatch.setColor(1,1,1,1); //white
     }
 
     /**
@@ -133,5 +140,7 @@ public class Zombie extends Enemy {
         upRunFrames.clear();
         rightRunFrames.clear();
         leftRunFrames.clear();
+
+        System.out.println("Zombie shared dispose called");
     }
 }

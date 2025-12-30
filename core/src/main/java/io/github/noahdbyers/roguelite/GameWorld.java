@@ -220,31 +220,37 @@ public class GameWorld {
         float roomPixelW = room.getRoomWidth() * tileSize;
         float roomPixelH = room.getRoomHeight() * tileSize;
 
-        float size = 28f;
+        // ✅ Actual zombie hitbox size (must match your Zombie/Enemy constructor)
+        final float hbW = 32f;
+        final float hbH = 52f;
 
         for (int tries = 0; tries < 200; tries++) {
-            float x = rng.nextFloat() * (roomPixelW - size);
-            float y = rng.nextFloat() * (roomPixelH - size);
+            float x = rng.nextFloat() * (roomPixelW - hbW);
+            float y = rng.nextFloat() * (roomPixelH - hbH);
 
+            // center-to-center distance check using ACTUAL hitbox
             float px = player.getX() + player.getWidth() / 2f;
             float py = player.getY() + player.getHeight() / 2f;
-            float ex = x + size / 2f;
-            float ey = y + size / 2f;
+            float ex = x + hbW / 2f;
+            float ey = y + hbH / 2f;
 
             float dx = ex - px;
             float dy = ey - py;
+
             float minDist = 120f;
             if (dx * dx + dy * dy < minDist * minDist) continue;
 
-            if (rectHitsWall(x, y, size, size)) continue;
+            // ✅ Check the rectangle the zombie REALLY occupies
+            if (rectHitsWall(x, y, hbW, hbH)) continue;
 
-            enemies.add(new Zombie(x, y, speed, size, 3));
+            enemies.add(new Zombie(x, y, speed, hbW, hbH, 3));
             return;
         }
 
-        float[] open = findFirstOpenSpot(size, 120f);
+        // Fallback scan: use the real hitbox too (see helper below)
+        float[] open = findFirstOpenSpotRect(hbW, hbH, 120f);
         if (open != null) {
-            enemies.add(new Zombie(open[0], open[1], speed, size, 3));
+            enemies.add(new Zombie(open[0], open[1], speed, hbW, hbH, 3));
         }
     }
 
@@ -606,6 +612,35 @@ public class GameWorld {
 
     public int getCoins() { return coins; }
     public int getSouls() { return souls; }
+
+    private float[] findFirstOpenSpotRect(float w, float h, float minDistFromPlayer) {
+        int tileSize = room.getTileSize();
+        int roomW = room.getRoomWidth();
+        int roomH = room.getRoomHeight();
+
+        float px = player.getX() + player.getWidth() / 2f;
+        float py = player.getY() + player.getHeight() / 2f;
+
+        for (int ty = 1; ty < roomH - 1; ty++) {
+            for (int tx = 1; tx < roomW - 1; tx++) {
+                // pick a pixel position centered inside this tile
+                float x = tx * tileSize + (tileSize - w) / 2f;
+                float y = ty * tileSize + (tileSize - h) / 2f;
+
+                if (rectHitsWall(x, y, w, h)) continue;
+
+                float ex = x + w / 2f;
+                float ey = y + h / 2f;
+                float dx = ex - px;
+                float dy = ey - py;
+
+                if (dx * dx + dy * dy < minDistFromPlayer * minDistFromPlayer) continue;
+
+                return new float[]{x, y};
+            }
+        }
+        return null;
+    }
 
     public void dispose() {
         cardTexture.dispose();

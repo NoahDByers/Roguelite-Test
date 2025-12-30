@@ -11,9 +11,13 @@ public class Enemy extends Entity {
 
     // Direction the enemy is currently facing
     private Facing facing = Facing.DOWN;
+    // Flash effect
+    private float hitFlashTimer = 0f;
+    private static final float HIT_FLASH_DURATION = 0.1f;
 
-    public Enemy(float x, float y, float speed, float size, int health) {
-        super(x, y, speed, size, size);
+
+    public Enemy(float x, float y, float speed, float width, float height, int health) {
+        super(x, y, speed, width, height);
         this.health = health;
     }
 
@@ -57,6 +61,10 @@ public class Enemy extends Entity {
         }
 
         updateFacing(moveX, moveY);
+
+        if (hitFlashTimer > 0f) {
+            hitFlashTimer -= Gdx.graphics.getDeltaTime();
+        }
     }
 
     /**
@@ -78,9 +86,10 @@ public class Enemy extends Entity {
     }
 
     public void takeDamage(int amount) {
-
         health -= amount;
+        hitFlashTimer = HIT_FLASH_DURATION;
     }
+
 
     public boolean isDead() {
         return health <= 0;
@@ -135,6 +144,10 @@ public class Enemy extends Entity {
             case LEFT:  shapeRenderer.line(cx, cy, cx - len, cy); break;
             case RIGHT: shapeRenderer.line(cx, cy, cx + len, cy); break;
         }
+    }
+
+    public boolean isFlashing() {
+        return hitFlashTimer > 0f;
     }
 
     public void update() {}
