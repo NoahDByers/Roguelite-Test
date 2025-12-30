@@ -189,7 +189,7 @@ public class Main extends ApplicationAdapter {
 
         room = new Room(32, 20, 15, starterRoom, makeCemeteryTileset());
         room.setViewport(viewport);
-        player = new Player(100, 100, 200, 32, 32);
+        player = new Player(100, 100, 170, 32, 32);
         world = new GameWorld(room, player, spriteBatch);
         world.setAudio(audio);
         world.setWeapon(magicBookWeapon);

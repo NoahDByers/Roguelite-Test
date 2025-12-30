@@ -201,7 +201,7 @@ public class GameWorld {
     private void startWave() {
         enemies.clear();
 
-        int toSpawn = 50 + wave;
+        int toSpawn = 10 + wave;
         float baseSpeed = 60f + wave * 8f;
 
         for (int i = 0; i < toSpawn; i++) {
