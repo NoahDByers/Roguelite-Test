@@ -1,133 +1,198 @@
 package io.github.noahdbyers.roguelite;
 
 import com.badlogic.gdx.Gdx;
+import com.badlogic.gdx.Input;
 import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.g2d.TextureRegion;
-import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 
 import java.util.ArrayList;
 
 public class Player extends Entity {
+
     public enum Facing { UP, DOWN, LEFT, RIGHT }
+
+    // Movement / Facing state
     private Facing facing = Facing.DOWN;
-    private ArrayList<TextureRegion> spritesList = new ArrayList<TextureRegion>();
-    private int spriteIndex = 0;
+    private Facing lastFacing = Facing.DOWN;
+
+    private boolean isMoving = false;
+    private boolean lastMoving = false;
+
+    // Animation
+    private static final float IDLE_FRAME_TIME = 0.25f; // slower idle
+    private static final float RUN_FRAME_TIME  = 0.12f; // faster run
+
+    private float animTimer = 0f;
+    private int frameIndex = 0;
+
+    // Sprites
+    private final Texture idleSheet;
+    private final Texture runSheet;
+
+    private final ArrayList<TextureRegion> downIdleFrames = new ArrayList<>();
+    private final ArrayList<TextureRegion> rightIdleFrames = new ArrayList<>();
+    private final ArrayList<TextureRegion> upIdleFrames = new ArrayList<>();
+
+    // Optional (only use if you actually fill them)
+    private final ArrayList<TextureRegion> downRunFrames = new ArrayList<>();
+    private final ArrayList<TextureRegion> rightRunFrames = new ArrayList<>();
+    private final ArrayList<TextureRegion> upRunFrames = new ArrayList<>();
+
+    // Stats / timers
     private int maxHealth = 5;
     private int health = 5;
 
-    //Currently using place holders
     private int mana = health;
     private int maxMana = maxHealth;
+
     private float invulnTimer = 0f;
-    private float invulnDuration = 0.5f; //invincibility timer after being hit
+    private final float invulnDuration = 0.5f;
 
-    //Instantiating and creating the textures that you need for player animations
-    private Texture idleDown = new Texture("player/idleDown.png");
-
-    //Storing the texture region index currently being rendered for this player
-    private float animTimer = 0f;
-    private boolean isMoving = false;
-    int currSpriteIndex = 0;
-    int direction = 2;
-    Player(float x, float y, float speed, float width, float height) {
+    public Player(float x, float y, float speed, float width, float height) {
         super(x, y, speed, width, height);
 
-        //Cutting the idle sprite sheet into individual regions
-        spritesList.add(new TextureRegion(idleDown, 24, 18, 17,30));
-        spritesList.add(new TextureRegion(idleDown, 88, 19, 17, 30));
-        spritesList.add(new TextureRegion(idleDown, 152, 19, 17, 30));
-        spritesList.add(new TextureRegion(idleDown, 216, 19, 17, 30));
+        idleSheet = new Texture("player/Idle.png");
+        runSheet = new Texture("player/Run.png");
+
+        // NOTE: These values must match your sheet.
+        // If your sheet is actually 16x32 frames, set fh=32 and adjust Y rows accordingly.
+        final int fw = 16;
+        final int fh = 24;
+
+        int DOWN_Y  = 7;
+        int RIGHT_Y = 39;
+        int UP_Y    = 135;
+
+        for (int i = 0; i < 4; i++) {
+            int x0 = i * fw;
+            downIdleFrames.add(new TextureRegion(idleSheet, x0, DOWN_Y,  fw, fh));
+            rightIdleFrames.add(new TextureRegion(idleSheet, x0, RIGHT_Y, fw, fh));
+            upIdleFrames.add(new TextureRegion(idleSheet, x0, UP_Y,     fw, fh));
+        }
+        // If/when you add run frames, fill downRunFrames/rightRunFrames/upRunFrames here.
+
+        for (int i = 0; i < 6; i++) {
+            int x0 = i * fw;
+            downRunFrames.add(new TextureRegion(runSheet, x0, 5, fw, 26));
+            rightRunFrames.add(new TextureRegion(runSheet, x0, 69, fw, 26));
+            upRunFrames.add(new TextureRegion(runSheet, x0, 132, fw, 26));
+        }
     }
 
-    //Input Handling Methods
-
-    //This is a method to handle basic WASD movement
     public void update(Room room, int tileSize) {
-
         float delta = Gdx.graphics.getDeltaTime();
 
-        float moveX = 0;
-        float moveY = 0;
+        float moveX = 0f;
+        float moveY = 0f;
 
-        if (Gdx.input.isKeyPressed(com.badlogic.gdx.Input.Keys.A) ||
-            Gdx.input.isKeyPressed(com.badlogic.gdx.Input.Keys.D) ||
-            Gdx.input.isKeyPressed(com.badlogic.gdx.Input.Keys.S) ||
-            Gdx.input.isKeyPressed(com.badlogic.gdx.Input.Keys.W)) {
-            isMoving = true;
-        }
-        else {
-            isMoving = false;
-        }
+        boolean left  = Gdx.input.isKeyPressed(Input.Keys.A);
+        boolean right = Gdx.input.isKeyPressed(Input.Keys.D);
+        boolean down  = Gdx.input.isKeyPressed(Input.Keys.S);
+        boolean up    = Gdx.input.isKeyPressed(Input.Keys.W);
 
+        // Facing priority (horizontal > vertical)
+        if (left && !right) facing = Facing.LEFT;
+        else if (right && !left) facing = Facing.RIGHT;
+        else if (down && !up) facing = Facing.DOWN;
+        else if (up && !down) facing = Facing.UP;
 
-        if (Gdx.input.isKeyPressed(com.badlogic.gdx.Input.Keys.A)) {
-            direction = 0; //Left
-            moveX -= getSpeed() * delta;
-            facing = Facing.LEFT;
-        }
-        if (Gdx.input.isKeyPressed(com.badlogic.gdx.Input.Keys.D)) {
-            direction = 1; //Right
-            moveX += getSpeed() * delta;
-            facing = Facing.RIGHT;
-        }
-        if (Gdx.input.isKeyPressed(com.badlogic.gdx.Input.Keys.S)) {
-            direction = 2; //Down
-            moveY -= getSpeed() * delta;
-            facing = Facing.DOWN;
-        }
-        if (Gdx.input.isKeyPressed(com.badlogic.gdx.Input.Keys.W)) {
-            direction = 3; //Up
-            moveY += getSpeed() * delta;
-            facing = Facing.UP;
+        // Intended movement
+        if (left)  moveX -= getSpeed() * delta;
+        if (right) moveX += getSpeed() * delta;
+        if (down)  moveY -= getSpeed() * delta;
+        if (up)    moveY += getSpeed() * delta;
+
+        float oldX = getX();
+        float oldY = getY();
+
+        setX(oldX + moveX);
+        if (collidesWithRoom(room.getRoom(), tileSize, room.getRoomWidth(), room.getRoomHeight())) {
+            setX(oldX);
         }
 
-        //Move X axis
-        setX(getX() + moveX);
-        if (collidesWithRoom(room.getRoom(), tileSize)) {
-            setX(getX() - moveX);
+        setY(oldY + moveY);
+        if (collidesWithRoom(room.getRoom(), tileSize, room.getRoomWidth(), room.getRoomHeight())) {
+            setY(oldY);
         }
 
-        //Move Y axis
-        setY(getY() + moveY);
-        if (collidesWithRoom(room.getRoom(), tileSize)) {
-            setY(getY() - moveY);
+        boolean newMoving = (getX() != oldX) || (getY() != oldY);
+
+        boolean stateChanged =
+            (facing != lastFacing) ||
+                (newMoving && !lastMoving) ||
+                (!newMoving && lastMoving);
+
+        isMoving = newMoving;
+
+        // Reset the animation when we change direction OR start/stop moving
+        if (stateChanged) {
+            animTimer = 0f;
+            frameIndex = 0;
+            lastFacing = facing;
+            lastMoving = isMoving;
+        } else {
+            lastMoving = isMoving;
         }
     }
 
-    public void update() {}
-
-    public int getHealth() {
-        return health;
+    /**
+     * Returns the correct animation frames.
+     * IMPORTANT: if run frames aren't loaded yet, fall back to idle frames.
+     */
+    private ArrayList<TextureRegion> getFramesForFacing() {
+        if (facing == Facing.UP && isMoving) return upRunFrames;
+        if ((facing == Facing.LEFT || facing == Facing.RIGHT) && isMoving) return rightRunFrames;
+        if (facing == Facing.DOWN && isMoving) return downRunFrames;
+        if(facing == Facing.UP && !isMoving) return upIdleFrames;
+        if((facing == Facing.LEFT || facing == Facing.RIGHT) && !isMoving) return rightIdleFrames;
+        return downIdleFrames;
     }
 
-    public int getMaxHealth() {
-        return maxHealth;
-    }
-    public int getMana() { return mana; }
-    public int getMaxMana() { return maxMana; }
+    public void draw(SpriteBatch spriteBatch, float delta) {
+        ArrayList<TextureRegion> frames = getFramesForFacing();
+        if (frames.isEmpty()) return;
 
-    public Facing getFacing() {
-        return facing;
+        // Choose frame time based on state
+        float frameTime = isMoving ? RUN_FRAME_TIME : IDLE_FRAME_TIME;
+
+        // Advance animation ALWAYS (idle and run)
+        animTimer += delta;
+        while (animTimer >= frameTime) {
+            animTimer -= frameTime;
+            frameIndex = (frameIndex + 1) % frames.size();
+        }
+
+        if (isInvulnerable()) {
+            if (((int)(invulnTimer * 20f)) % 2 == 0) return;
+        }
+
+        TextureRegion region = frames.get(frameIndex);
+
+        float drawW = 32f;
+        float drawH = 48f;
+
+        // Mirror for LEFT without mutating TextureRegion
+        boolean flipX = (facing == Facing.LEFT);
+        float x = flipX ? (getX() + drawW) : getX();
+        float w = flipX ? -drawW : drawW;
+
+        spriteBatch.draw(region, x, getY(), w, drawH);
     }
-    public void updateTimers() {
-        float delta = Gdx.graphics.getDeltaTime();
+
+    public void updateTimers(float delta) {
         if (invulnTimer > 0f) {
             invulnTimer -= delta;
             if (invulnTimer < 0f) invulnTimer = 0f;
         }
     }
 
-    public boolean isInvulnerable() {
-        return invulnTimer > 0f;
-    }
+    public boolean isInvulnerable() { return invulnTimer > 0f; }
 
     public void takeDamage(int amount) {
         if (isInvulnerable()) return;
-
         health -= amount;
         if (health < 0) health = 0;
-
         invulnTimer = invulnDuration;
     }
 
@@ -136,39 +201,44 @@ public class Player extends Entity {
         if (health > maxHealth) health = maxHealth;
     }
 
-    public boolean collidesWithRoom(int[][] room, int tileSize) {
-        int leftTile = (int)(getX() / tileSize);
-        int rightTile = (int)((getX() + getWidth()) / tileSize);
-        int bottomTile = (int)(getY() / tileSize);
-        int topTile = (int)((getY() + getHeight()) / tileSize);
+    public int getHealth() { return health; }
+    public int getMaxHealth() { return maxHealth; }
+    public int getMana() { return mana; }
+    public int getMaxMana() { return maxMana; }
+    public Facing getFacing() { return facing; }
 
-        for (int a = bottomTile; a <= topTile; a++) {
-            for(int b = leftTile; b <= rightTile; b++) {
-                if (room[a][b] == 1) {
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
     public void increaseMaxHealth(int amount) {
         maxHealth += amount;
         health += amount;
     }
 
-    //This method is used to draw the player
-    public void draw(SpriteBatch spriteBatch, float delta) {
-        animTimer += delta;
+    private boolean collidesWithRoom(int[][] grid, int tileSize, int roomW, int roomH) {
+        int leftTile   = (int)(getX() / tileSize);
+        int rightTile  = (int)((getX() + getWidth()) / tileSize);
+        int bottomTile = (int)(getY() / tileSize);
+        int topTile    = (int)((getY() + getHeight()) / tileSize);
 
-        if(animTimer >= 0.20f) {
-            animTimer -= 0.20f; // Keeps it stable even if delta is a bit big
-            currSpriteIndex = (currSpriteIndex + 1) % spritesList.size();
+        leftTile   = clamp(leftTile, 0, roomW - 1);
+        rightTile  = clamp(rightTile, 0, roomW - 1);
+        bottomTile = clamp(bottomTile, 0, roomH - 1);
+        topTile    = clamp(topTile, 0, roomH - 1);
+
+        for (int ty = bottomTile; ty <= topTile; ty++) {
+            for (int tx = leftTile; tx <= rightTile; tx++) {
+                if (grid[ty][tx] == 1) return true;
+            }
         }
+        return false;
+    }
 
-        spriteBatch.draw(spritesList.get(currSpriteIndex), getX(), getY(), 32f, 51f);
+    private static int clamp(int v, int lo, int hi) {
+        return Math.max(lo, Math.min(hi, v));
     }
 
     public void dispose() {
-        idleDown.dispose();
+        idleSheet.dispose();
+        runSheet.dispose();
     }
+
+    public void update() {}
 }

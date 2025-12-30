@@ -107,7 +107,7 @@ public class GameWorld {
 
         // Normal simulation
         player.update(room, room.getTileSize());
-        player.updateTimers();
+        player.updateTimers(delta);
 
         for (Enemy e : enemies) {
             if (e == null) continue;
@@ -202,7 +202,7 @@ public class GameWorld {
     private void startWave() {
         enemies.clear();
 
-        int toSpawn = 2 + wave;
+        int toSpawn = 8 + wave;
         float baseSpeed = 80f + wave * 8f;
 
         for (int i = 0; i < toSpawn; i++) {
