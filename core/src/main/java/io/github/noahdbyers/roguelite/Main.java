@@ -19,21 +19,21 @@ import java.util.Collections;
 public class Main extends ApplicationAdapter {
 
     private final int[][] starterRoom = {
-        {1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1},
-        {1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
-        {1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
-        {1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
-        {1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
-        {1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
-        {1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
-        {1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
-        {1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
-        {1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
-        {1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
-        {1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
-        {1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
-        {1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
-        {1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1}
+        {2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,2},
+        {4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3},
+        {4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3},
+        {4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3},
+        {4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3},
+        {4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3},
+        {4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3},
+        {4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3},
+        {4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3},
+        {4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3},
+        {4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3},
+        {4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3},
+        {4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3},
+        {4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3},
+        {2,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,2}
     };
 
     private OrthographicCamera camera;
@@ -58,6 +58,10 @@ public class Main extends ApplicationAdapter {
     private Texture cemeteryTiles;
     private Texture cemeteryFloor;
 
+    //Weapon Textures
+    private Texture iceWeaponSheet;
+    private TextureRegion damageBook;
+
     // Game objects
     private Room room;
     private Player player;
@@ -69,38 +73,40 @@ public class Main extends ApplicationAdapter {
     private Button settingsCogButton;
     private Button marketButton;
     private ArrayList<Button> titleScreenButtons;
-
     private boolean titleScreen = true;
+
+    //Creating the weapon objects
+    private Weapon magicBookWeapon;
 
     @Override
     public void create() {
-        // Rendering tools
         shapeRenderer = new ShapeRenderer();
         spriteBatch = new SpriteBatch();
 
-        // Font
         font = new BitmapFont();
         font.getData().setScale(1.2f);
         font.setColor(1f, 1f, 1f, 1f);
 
-        // Camera + viewport
         camera = new OrthographicCamera();
         viewport = new FitViewport(VIRTUAL_WIDTH, VIRTUAL_HEIGHT, camera);
-        viewport.apply();
-
+        viewport.apply(true);
         camera.position.set(VIRTUAL_WIDTH / 2f, VIRTUAL_HEIGHT / 2f, 0);
         camera.update();
-
-        shapeRenderer.setProjectionMatrix(camera.combined);
-        spriteBatch.setProjectionMatrix(camera.combined);
 
         // Load textures (once)
         titleScreenBackgroundTex = new Texture("title_screen.png");
         generalAssets = new Texture("general_assets.png");
         uiBanners = new Texture("bannerSpritesheet.png");
+        iceWeaponSheet = new Texture("weapons/iceWeapons.png");
 
-        cemeteryTiles = new Texture("cemeteryTiles.png");
-        cemeteryFloor = new Texture("cemeteryFloor.png");
+        cemeteryTiles = new Texture("cemetery/cemeteryTiles.png");
+        cemeteryFloor = new Texture("cemetery/cemeteryFloor.png");
+
+        // Pixel art settings (helps, but seams are mostly from fractional scaling)
+        cemeteryTiles.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
+        cemeteryFloor.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
+        cemeteryTiles.setWrap(Texture.TextureWrap.ClampToEdge, Texture.TextureWrap.ClampToEdge);
+        cemeteryFloor.setWrap(Texture.TextureWrap.ClampToEdge, Texture.TextureWrap.ClampToEdge);
 
         // Extract UI regions
         uiBannerRegion = new TextureRegion(uiBanners, 16, 16, 192, 275);
@@ -127,6 +133,12 @@ public class Main extends ApplicationAdapter {
             new TextureRegion(generalAssets, 116, 404, 32, 32),
             new TextureRegion(generalAssets, 116, 404, 32, 32));
 
+        //Weapon Textures
+        damageBook = new TextureRegion(iceWeaponSheet, 146, 80, 12, 15);
+
+        //Create weapons
+        magicBookWeapon = new Weapon("Magic Book", 0.25f, damageBook);
+
         // Create title screen buttons
         marketButton = new Button(205, 20, 80, 80, null, marketButtonTextures);
         settingsCogButton = new Button(45, 20, 80, 80, null, settingsCogTextures);
@@ -134,23 +146,25 @@ public class Main extends ApplicationAdapter {
 
         Collections.addAll(titleScreenButtons, marketButton, settingsCogButton, playButton);
 
-        // NOTE: We intentionally do NOT create the world here.
-        // We create it when the player clicks PLAY via startNewRun().
+        // Do NOT create the world here — only when starting run
     }
 
-    /** Build a fresh tileset list using the already-loaded textures. */
+    /** Build a fresh tileset list using already-loaded textures. */
     private ArrayList<TextureRegion> makeCemeteryTileset() {
         ArrayList<TextureRegion> cemeteryTileset = new ArrayList<>();
         Collections.addAll(cemeteryTileset,
             new TextureRegion(cemeteryFloor, 80, 0, 15, 15),
-            new TextureRegion(cemeteryTiles, 33, 0, 32, 32)
+            new TextureRegion(cemeteryTiles, 33, 0, 32, 32),
+            new TextureRegion(cemeteryTiles, 32, 32, 32, 32),
+            new TextureRegion(cemeteryTiles, 0, 32, 32, 32),
+            new TextureRegion(cemeteryTiles, 64, 32, 32, 32),
+            new TextureRegion(cemeteryTiles, 32, 64, 32, 32)
         );
         return cemeteryTileset;
     }
 
     /** Creates a fresh run (room/player/world/UI) safely. */
     private void startNewRun() {
-        // If you ever call this more than once, dispose the old player/UI to avoid leaks.
         if (player != null) {
             player.dispose();
             player = null;
@@ -159,32 +173,58 @@ public class Main extends ApplicationAdapter {
             UI.dispose();
             UI = null;
         }
+        if (world != null) {
+            world.dispose();
+            world = null;
+        }
 
-        // Create game assets
         room = new Room(32, 20, 15, starterRoom, makeCemeteryTileset());
+        room.setViewport(viewport);
         player = new Player(100, 100, 200, 32, 32);
         world = new GameWorld(room, player);
+        world.setWeapon(magicBookWeapon);
 
-        // UI renders directly from world; entities list is not needed (pass empty list)
+
         UI = new UserInterface(VIRTUAL_WIDTH, VIRTUAL_HEIGHT, world, shapeRenderer, new ArrayList<>(), spriteBatch);
     }
 
+    /**
+     * ✅ Integer-scaled viewport on resize (prevents tile seams when resizing).
+     * Keeps the game scaled by 1x/2x/3x... of the virtual resolution.
+     */
     @Override
     public void resize(int width, int height) {
-        viewport.update(width, height, true);
+        int scale = Math.max(1, Math.min(
+            width / (int) VIRTUAL_WIDTH,
+            height / (int) VIRTUAL_HEIGHT
+        ));
+
+        int vpW = (int) VIRTUAL_WIDTH * scale;
+        int vpH = (int) VIRTUAL_HEIGHT * scale;
+
+        int vpX = (width - vpW) / 2;
+        int vpY = (height - vpH) / 2;
+
+        viewport.setScreenBounds(vpX, vpY, vpW, vpH);
+        viewport.apply(true);
+
+        camera.position.set(VIRTUAL_WIDTH / 2f, VIRTUAL_HEIGHT / 2f, 0f);
         camera.update();
-        shapeRenderer.setProjectionMatrix(camera.combined);
-        spriteBatch.setProjectionMatrix(camera.combined);
     }
 
     @Override
     public void render() {
         ScreenUtils.clear(0.15f, 0.15f, 0.2f, 1f);
 
-        // Keep matrices synced (especially useful if you add camera movement later)
+        // ✅ Always re-apply viewport and matrices (especially after resize)
+        viewport.apply();
+
+        // ✅ Snap camera to whole pixels (avoids subpixel seams/jitter)
+        camera.position.set(Math.round(camera.position.x), Math.round(camera.position.y), 0f);
         camera.update();
-        shapeRenderer.setProjectionMatrix(camera.combined);
+
         spriteBatch.setProjectionMatrix(camera.combined);
+        shapeRenderer.setProjectionMatrix(camera.combined);
 
         if (titleScreen) {
             spriteBatch.begin();
@@ -198,14 +238,11 @@ public class Main extends ApplicationAdapter {
             for (Button b : titleScreenButtons) {
                 if (b.isHovered(viewport)) b.setCurrTextureIndex(1);
                 else b.setCurrTextureIndex(0);
-
                 b.drawButton(spriteBatch);
             }
 
             if (playButton.isClicked(viewport)) {
                 playButton.setCurrTextureIndex(2);
-
-                // ✅ Create the world only when starting the run
                 startNewRun();
                 titleScreen = false;
             }
@@ -216,25 +253,27 @@ public class Main extends ApplicationAdapter {
             spriteBatch.end();
         } else {
             float delta = Gdx.graphics.getDeltaTime();
-
-            // Safety: if something went wrong and world/UI not created, don't crash
-            if (world != null) world.update(delta);
+            if (world != null) {
+                // Convert mouse screen -> world using the SAME viewport you render with
+                com.badlogic.gdx.math.Vector2 mouse = new com.badlogic.gdx.math.Vector2(Gdx.input.getX(), Gdx.input.getY());
+                viewport.unproject(mouse);
+                world.setAimWorld(mouse.x, mouse.y);
+                world.update(delta);
+            }
             if (UI != null) UI.drawQueue();
         }
     }
 
     @Override
     public void dispose() {
-        // Dispose game objects
         if (UI != null) UI.dispose();
         if (player != null) player.dispose();
+        if (world != null) world.dispose();
 
-        // Dispose renderers
         shapeRenderer.dispose();
         spriteBatch.dispose();
         font.dispose();
 
-        // Dispose textures loaded here
         uiBanners.dispose();
         titleScreenBackgroundTex.dispose();
         generalAssets.dispose();
@@ -243,9 +282,8 @@ public class Main extends ApplicationAdapter {
         cemeteryFloor.dispose();
     }
 
-    /** If you ever add a "back to title screen" button, do NOT dispose player here. */
     public void drawTitleScreen() {
         titleScreen = true;
-        // ✅ Do NOT dispose player here — disposing assets mid-run causes random crashes.
+        // Do NOT dispose player/world/UI here; do it when starting a new run or in dispose().
     }
 }

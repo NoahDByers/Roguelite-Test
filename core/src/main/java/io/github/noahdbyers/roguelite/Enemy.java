@@ -101,7 +101,7 @@ public class Enemy extends Entity {
 
         for (int y = bottomTile; y <= topTile; y++) {
             for (int x = leftTile; x <= rightTile; x++) {
-                if (grid[y][x] == 1) return true;
+                if (grid[y][x] == 1 || grid[y][x] == 2 || grid[y][x] == 3 || grid[y][x] == 4 || grid[y][x] == 5) return true;
             }
         }
         return false;

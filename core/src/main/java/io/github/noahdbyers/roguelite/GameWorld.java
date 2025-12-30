@@ -24,6 +24,10 @@ public class GameWorld {
     private boolean choosingUpgrade = false;
     private final Upgrade[] offeredUpgrades = new Upgrade[3];
 
+    // Aim point in WORLD coordinates (set from Main every frame)
+    private float aimWorldX = 0f;
+    private float aimWorldY = 0f;
+
     // Difficulty (optional; left in for future)
     private float spawnTimer = 0f;
     private float difficultyTimer = 0f;
@@ -36,9 +40,12 @@ public class GameWorld {
     private float minSpawnInterval = startMinSpawnInterval;
     private int maxEnemies = startMaxEnemies;
 
-    // Auto-fire
-    private float attackCooldown = 0f;
-    private float attackCooldownTime = 0.25f;
+    // Fire rate
+    private float attackCooldown = 0f;        // kept for compatibility (not used if weapon != null)
+    private float attackCooldownTime = 0.25f; // kept for compatibility (not used if weapon != null)
+
+    // Current Weapon
+    private Weapon weapon;
 
     // Bullet tuning
     private float bulletSpeed = 240f;
@@ -67,6 +74,11 @@ public class GameWorld {
     public int getWave() { return wave; }
 
     public Upgrade[] getOfferedUpgrades() { return offeredUpgrades; }
+
+    public void setWeapon(Weapon weapon) {
+        this.weapon = weapon;
+        if (this.weapon != null) this.weapon.setAttackCooldown(0f);
+    }
 
     // -------------------- Update loop --------------------
     public void update(float delta) {
@@ -102,7 +114,7 @@ public class GameWorld {
 
         // Combat
         handlePlayerEnemyContact();
-        tryShootAutoAim(delta);
+        tryShootTowardsCursor(delta); // ✅ cursor aim
         updateBullets();
 
         // Wave management
@@ -132,6 +144,9 @@ public class GameWorld {
         // Reset combat tuning
         attackCooldown = 0f;
         attackCooldownTime = 0.25f;
+
+        if (weapon != null) weapon.setAttackCooldown(0f);
+
         bulletSpeed = 240f;
         bulletSize = 8f;
         bulletDamage = 1;
@@ -173,8 +188,8 @@ public class GameWorld {
     private void startWave() {
         enemies.clear();
 
-        int toSpawn = 5 + wave;
-        float baseSpeed = 80f + wave * 8f;
+        int toSpawn = 50 + wave;
+        float baseSpeed = 60f + wave * 8f;
 
         for (int i = 0; i < toSpawn; i++) {
             spawnZombieWithSpeed(baseSpeed);
@@ -192,14 +207,12 @@ public class GameWorld {
         float roomPixelW = room.getRoomWidth() * tileSize;
         float roomPixelH = room.getRoomHeight() * tileSize;
 
-        // Keep this consistent since Zombie.draw uses getWidth()/getHeight()
         float size = 28f;
 
         for (int tries = 0; tries < 200; tries++) {
             float x = rng.nextFloat() * (roomPixelW - size);
             float y = rng.nextFloat() * (roomPixelH - size);
 
-            // Don't spawn too close to player
             float px = player.getX() + player.getWidth() / 2f;
             float py = player.getY() + player.getHeight() / 2f;
             float ex = x + size / 2f;
@@ -210,39 +223,66 @@ public class GameWorld {
             float minDist = 120f;
             if (dx * dx + dy * dy < minDist * minDist) continue;
 
-            // Don't spawn in walls
             if (rectHitsWall(x, y, size, size)) continue;
 
             enemies.add(new Zombie(x, y, speed, size, 3));
             return;
         }
 
-        // Fallback scan
         float[] open = findFirstOpenSpot(size, 120f);
         if (open != null) {
             enemies.add(new Zombie(open[0], open[1], speed, size, 3));
         }
     }
 
-    // -------------------- Combat --------------------
-    private void tryShootAutoAim(float delta) {
-        attackCooldown -= delta;
-        if (attackCooldown > 0f) return;
+    // -------------------- Combat (Cursor Aim) --------------------
+    private void tryShootTowardsCursor(float delta) {
+        if (weapon == null || player == null || room == null) return;
 
-        Enemy target = getNearestEnemy();
-        if (target == null) return;
+        weapon.setAttackCooldown(weapon.getAttackCooldown() - delta);
+        if (weapon.getAttackCooldown() > 0f) return;
 
-        float px = player.getX() + player.getWidth() / 2f;
-        float py = player.getY() + player.getHeight() / 2f;
-        float ex = target.getX() + target.getWidth() / 2f;
-        float ey = target.getY() + target.getHeight() / 2f;
+        float[] book = getBookWorldPos(32f); // distance from player
+        float sx = book[0];
+        float sy = book[1];
 
-        float dirX = ex - px;
-        float dirY = ey - py;
+        float dirX = aimWorldX - sx;
+        float dirY = aimWorldY - sy;
 
-        bullets.add(new Bullet(px, py, dirX, dirY, bulletSpeed, bulletSize));
-        attackCooldown = attackCooldownTime;
+        bullets.add(new Bullet(sx, sy, dirX, dirY, bulletSpeed, bulletSize));
+        weapon.setAttackCooldown(weapon.getAttackCooldownTime());
     }
+
+
+    private float[] getBookSpawnPointTowardsCursor(Player p, Room room, float distance) {
+        // Player center
+        float cx = p.getX() + p.getWidth() / 2f;
+        float cy = p.getY() + p.getHeight() / 2f;
+
+        // Mouse in WORLD coords
+        float mx = room.mouseToWorldX();
+        float my = room.mouseToWorldY();
+
+        // Aim vector
+        float dx = mx - cx;
+        float dy = my - cy;
+
+        float len = (float)Math.sqrt(dx * dx + dy * dy);
+        if (len == 0f) {
+            // fallback if mouse is exactly on player
+            return new float[]{cx, cy};
+        }
+
+        dx /= len;
+        dy /= len;
+
+        // Book sits distance units away from the player center
+        float sx = cx + dx * distance;
+        float sy = cy + dy * distance;
+
+        return new float[]{sx, sy};
+    }
+
 
     private void updateBullets() {
         if (room == null) return;
@@ -259,19 +299,16 @@ public class GameWorld {
 
             b.update();
 
-            // Wall hit
             if (b.collidesWithRoom(grid, tileSize)) {
                 bullets.remove(i);
                 continue;
             }
 
-            // Offscreen
             if (b.isOffScreen()) {
                 bullets.remove(i);
                 continue;
             }
 
-            // Enemy hit
             boolean hitEnemy = false;
             for (int e = enemies.size() - 1; e >= 0; e--) {
                 Enemy enemy = enemies.get(e);
@@ -312,7 +349,6 @@ public class GameWorld {
             if (hit && !player.isInvulnerable()) {
                 player.takeDamage(1);
 
-                // Knockback
                 float px = player.getX() + player.getWidth() / 2f;
                 float py = player.getY() + player.getHeight() / 2f;
                 float ex = enemy.getX() + enemy.getWidth() / 2f;
@@ -320,12 +356,14 @@ public class GameWorld {
 
                 float dx = px - ex;
                 float dy = py - ey;
-                float len = (float) Math.sqrt(dx * dx + dy * dy);
+                float len = (float)Math.sqrt(dx * dx + dy * dy);
                 if (len != 0f) { dx /= len; dy /= len; }
 
                 float push = 8f;
-                player.setX(player.getX() + dx * push);
-                player.setY(player.getY() + dy * push);
+                float knockX = dx * push;
+                float knockY = dy * push;
+
+                applyKnockbackWithCollision(player, knockX, knockY, room, room.getTileSize());
                 player.clampToScreen();
             }
         }
@@ -368,7 +406,12 @@ public class GameWorld {
         if (u == null || player == null) return;
 
         if (u.name.equals("Rapid Fire")) {
-            attackCooldownTime = Math.max(0.05f, attackCooldownTime * 0.8f);
+            // Prefer weapon cooldown time if present
+            if (weapon != null) {
+                weapon.setAttackCooldownTime(Math.max(0.05f, weapon.getAttackCooldownTime() * 0.8f));
+            } else {
+                attackCooldownTime = Math.max(0.05f, attackCooldownTime * 0.8f);
+            }
         } else if (u.name.equals("Runner")) {
             player.setSpeed(player.getSpeed() * 1.15f);
         } else if (u.name.equals("Vitality")) {
@@ -385,37 +428,8 @@ public class GameWorld {
     }
 
     // -------------------- Helpers --------------------
-    private Enemy getNearestEnemy() {
-        if (player == null) return null;
-
-        Enemy best = null;
-        float bestDist2 = Float.MAX_VALUE;
-
-        float px = player.getX() + player.getWidth() / 2f;
-        float py = player.getY() + player.getHeight() / 2f;
-
-        for (Enemy e : enemies) {
-            if (e == null) continue;
-
-            float ex = e.getX() + e.getWidth() / 2f;
-            float ey = e.getY() + e.getHeight() / 2f;
-
-            float dx = ex - px;
-            float dy = ey - py;
-            float dist2 = dx * dx + dy * dy;
-
-            if (dist2 < bestDist2) {
-                bestDist2 = dist2;
-                best = e;
-            }
-        }
-        return best;
-    }
-
-    private boolean overlaps(
-        float ax, float ay, float aw, float ah,
-        float bx, float by, float bw, float bh) {
-
+    private boolean overlaps(float ax, float ay, float aw, float ah,
+                             float bx, float by, float bw, float bh) {
         return ax < bx + bw &&
             ax + aw > bx &&
             ay < by + bh &&
@@ -436,7 +450,8 @@ public class GameWorld {
 
         for (int ty = bottom; ty <= top; ty++) {
             for (int tx = left; tx <= right; tx++) {
-                if (grid[ty][tx] == 1) return true;
+                int t = grid[ty][tx];
+                if (t == 1 || t == 2 || t == 3 || t == 4 || t == 5) return true;
             }
         }
         return false;
@@ -476,15 +491,101 @@ public class GameWorld {
         return Math.max(lo, Math.min(hi, v));
     }
 
+    private void applyKnockbackWithCollision(Player player, float knockX, float knockY, Room room, int tileSize) {
+        if (player == null || room == null) return;
+
+        float oldX = player.getX();
+        float oldY = player.getY();
+
+        // X axis
+        player.setX(oldX + knockX);
+        if (playerCollidesRoom(player, room, tileSize)) {
+            player.setX(oldX);
+        }
+
+        // Y axis
+        player.setY(oldY + knockY);
+        if (playerCollidesRoom(player, room, tileSize)) {
+            player.setY(oldY);
+        }
+    }
+
+    private boolean playerCollidesRoom(Player p, Room room, int tileSize) {
+        int[][] grid = room.getRoom();
+        int roomW = room.getRoomWidth();
+        int roomH = room.getRoomHeight();
+
+        int left   = clamp((int)(p.getX() / tileSize), 0, roomW - 1);
+        int right  = clamp((int)((p.getX() + p.getWidth() - 1) / tileSize), 0, roomW - 1);
+        int bottom = clamp((int)(p.getY() / tileSize), 0, roomH - 1);
+        int top    = clamp((int)((p.getY() + p.getHeight() - 1) / tileSize), 0, roomH - 1);
+
+        for (int ty = bottom; ty <= top; ty++) {
+            for (int tx = left; tx <= right; tx++) {
+                if (grid[ty][tx] == 1) return true;
+            }
+        }
+        return false;
+    }
+
+    public void setAimWorld(float x, float y) {
+        this.aimWorldX = x;
+        this.aimWorldY = y;
+    }
+
+    public float[] getBookWorldPos(float distance) {
+        if (player == null) return new float[]{0f, 0f};
+
+        float cx = player.getX() + player.getWidth() / 2f;
+        float cy = player.getY() + player.getHeight() / 2f;
+
+        float dx = aimWorldX - cx;
+        float dy = aimWorldY - cy;
+
+        float len = (float)Math.sqrt(dx * dx + dy * dy);
+        if (len == 0f) return new float[]{cx, cy};
+
+        dx /= len;
+        dy /= len;
+
+        float sx = cx + dx * distance;
+        float sy = cy + dy * distance;
+
+        // Optional: keep the book point out of walls (tiny 4x4 probe)
+        if (rectHitsWall(sx - 2, sy - 2, 4, 4)) {
+            // pull it halfway back toward player until valid
+            for (int i = 0; i < 6; i++) {
+                sx = (sx + cx) * 0.5f;
+                sy = (sy + cy) * 0.5f;
+                if (!rectHitsWall(sx - 2, sy - 2, 4, 4)) break;
+            }
+        }
+
+        return new float[]{sx, sy};
+    }
+
+    /** Angle the book should face (optional, for rotation). */
+    public float getAimAngleDeg() {
+        if (player == null) return 0f;
+
+        float cx = player.getX() + player.getWidth() / 2f;
+        float cy = player.getY() + player.getHeight() / 2f;
+
+        float dx = aimWorldX - cx;
+        float dy = aimWorldY - cy;
+
+        return (float)Math.toDegrees(Math.atan2(dy, dx));
+    }
+
+    public Weapon getWeapon() {
+        return weapon;
+    }
+
     public int getCoins() { return coins; }
     public int getSouls() { return souls; }
 
-    /**
-     * Call from Main.dispose() to avoid leaking textures.
-     * IMPORTANT: Zombies use shared textures; dispose them once globally.
-     */
     public void dispose() {
         cardTexture.dispose();
-        Zombie.disposeShared(); // shared zombie sheet cleanup
+        Zombie.disposeShared();
     }
 }

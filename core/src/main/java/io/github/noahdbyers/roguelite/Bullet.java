@@ -40,7 +40,7 @@ public class Bullet extends Entity{
         //Safety clamp (stops crashes at edges)
         if (ty < 0 || ty >= room.length || tx < 0 || tx >= room[0].length) return true;
 
-        return room[ty][tx] == 1;
+        return (room[ty][tx] == 1 || room[ty][tx] == 2 || room[ty][tx] == 3 || room[ty][tx] == 4 || room[ty][tx] == 5);
     }
 
     //This is a method to draw the bullets on screen

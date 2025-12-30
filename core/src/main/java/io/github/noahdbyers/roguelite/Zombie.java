@@ -114,12 +114,9 @@ public class Zombie extends Enemy {
         TextureRegion frame = frames.get(frameIndex);
 
         // If you want to enforce consistent on-screen size:
-        // float drawW = 24f;
-        // float drawH = 52f;
-        // spriteBatch.draw(frame, getX(), getY(), drawW, drawH);
-
-        // Otherwise use your entity size
-        spriteBatch.draw(frame, getX(), getY(), getWidth(), getHeight());
+        float drawW = 32f;
+        float drawH = 52f;
+        spriteBatch.draw(frame, getX(), getY(), drawW, drawH);
     }
 
     /**
