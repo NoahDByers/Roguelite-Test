@@ -112,6 +112,7 @@ public class UserInterface {
 
         if (!world.isChoosingUpgrade()) {
             drawHud();
+            drawDamagePopups();
         }
 
         if (world.isChoosingUpgrade()) {
@@ -415,6 +416,12 @@ public class UserInterface {
             1f, 1f,
             angle
         );
+    }
+
+    private void drawDamagePopups() {
+        for (DamagePopup p : world.getDamagePopups()) {
+            font.draw(spriteBatch, "" + p.amount, p.x, p.y);
+        }
     }
 
     public SpriteBatch getSpriteBatch() {
