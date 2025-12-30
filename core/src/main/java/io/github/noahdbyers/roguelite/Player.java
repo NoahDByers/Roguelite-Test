@@ -41,7 +41,7 @@ public class Player extends Entity {
 
     // Stats / timers
     private int maxHealth = 5;
-    private int health = 5;
+    private int health = 500000;
 
     private int mana = health;
     private int maxMana = maxHealth;

@@ -7,24 +7,13 @@ import com.badlogic.gdx.graphics.Texture;
 import java.util.ArrayList;
 import java.util.Random;
 
-/**
- * Cleaned-up GameWorld:
- * - Removes the missing Weapon dependency (no Weapon.java needed).
- * - Never relies on uninitialized offeredUpgrades (generates them when a wave clears).
- * - Exposes offered upgrades via getter so UI can display the SAME choices the world will apply.
- * - Safe restart that always gives you a valid Player and resets run state.
- * - Bullet damage/speed are actually tracked (simple and extensible).
- */
 public class GameWorld {
-    // Room / world
     private final Room room;
 
-    // Entities
     private Player player;
     private final ArrayList<Enemy> enemies = new ArrayList<>();
     private final ArrayList<Bullet> bullets = new ArrayList<>();
 
-    // Run stats / progression
     private boolean gameOver = false;
     private int enemiesKilled = 0;
     private int coins = 0;
@@ -32,11 +21,10 @@ public class GameWorld {
     private int wave = 1;
     private boolean waveActive = false;
 
-    // Upgrades
     private boolean choosingUpgrade = false;
     private final Upgrade[] offeredUpgrades = new Upgrade[3];
 
-    // Difficulty (optional spawn-over-time system)
+    // Difficulty (optional; left in for future)
     private float spawnTimer = 0f;
     private float difficultyTimer = 0f;
 
@@ -48,27 +36,25 @@ public class GameWorld {
     private float minSpawnInterval = startMinSpawnInterval;
     private int maxEnemies = startMaxEnemies;
 
-    // Auto-fire (replaces Weapon)
+    // Auto-fire
     private float attackCooldown = 0f;
-    private float attackCooldownTime = 0.25f; // seconds per shot
+    private float attackCooldownTime = 0.25f;
 
     // Bullet tuning
     private float bulletSpeed = 240f;
     private float bulletSize = 8f;
     private int bulletDamage = 1;
 
-    Texture cardTexture = new Texture("upgrade_card.png");
-
-    // RNG
+    private final Texture cardTexture = new Texture("upgrade_card.png");
     private final Random rng = new Random();
 
     public GameWorld(Room room, Player player) {
         this.room = room;
-        this.player = player; // may be null; restart() will ensure it isn't
+        this.player = player;
         restart();
     }
 
-    // -------------------- Public getters (Main/UI render from these) --------------------
+    // -------------------- Getters --------------------
     public Room getRoom() { return room; }
     public Player getPlayer() { return player; }
     public ArrayList<Enemy> getEnemies() { return enemies; }
@@ -80,12 +66,11 @@ public class GameWorld {
     public int getEnemiesKilled() { return enemiesKilled; }
     public int getWave() { return wave; }
 
-    /** UI should read these to display the 3 choices currently being offered. */
     public Upgrade[] getOfferedUpgrades() { return offeredUpgrades; }
 
     // -------------------- Update loop --------------------
     public void update(float delta) {
-        // Restart works anytime
+        // Restart
         if (Gdx.input.isKeyJustPressed(Input.Keys.R)) {
             restart();
             return;
@@ -93,66 +78,54 @@ public class GameWorld {
 
         if (gameOver) return;
 
-        // If we’re choosing upgrades, pause simulation until selection
+        // Pause world while choosing upgrades
         if (choosingUpgrade) {
             handleUpgradeInput();
             return;
         }
 
-        // Safety: player should always exist after restart, but keep this guard
+        // Safety
         if (player == null) {
             ensurePlayer();
             if (player == null) return;
         }
 
-        // Normal simulation
+        // Update player
         player.update(room, room.getTileSize());
         player.updateTimers(delta);
 
+        // Update enemies
         for (Enemy e : enemies) {
             if (e == null) continue;
             e.update(player, room, room.getTileSize());
         }
 
-        // Contact damage
+        // Combat
         handlePlayerEnemyContact();
-
-        // Auto-fire
         tryShootAutoAim(delta);
-
-        // Bullets update / collisions
         updateBullets();
 
         // Wave management
-        if (!waveActive) {
-            startWave();
-        }
+        if (!waveActive) startWave();
 
-        // Wave cleared -> offer upgrades
         if (waveActive && enemies.isEmpty()) {
             waveActive = false;
-            wave++; // next wave number
+            wave++;
             beginUpgradeChoice();
         }
 
-        // Game over condition
+        // Game over
         if (player.getHealth() <= 0) {
             gameOver = true;
         }
-
-        // If you want “spawn over time” inside waves, you can call:
-        // updateSpawning(delta);
     }
 
     // -------------------- Restart --------------------
     public void restart() {
         gameOver = false;
 
-        // Ensure player exists and is "fresh"
-        // (Player has no setHealth(), so the simplest reliable reset is to recreate it.)
         ensurePlayerFresh();
 
-        // Enemies
         enemies.clear();
         bullets.clear();
 
@@ -182,12 +155,10 @@ public class GameWorld {
 
     private void ensurePlayer() {
         if (player != null) return;
-        // Reasonable defaults; adjust if you prefer different starting stats/sizes
         player = new Player(60, 60, 140f, 24f, 24f);
     }
 
     private void ensurePlayerFresh() {
-        // Recreate to reset health to its constructor defaults (5/5 in your Player class).
         if (player == null) {
             ensurePlayer();
             return;
@@ -202,35 +173,33 @@ public class GameWorld {
     private void startWave() {
         enemies.clear();
 
-        int toSpawn = 8 + wave;
+        int toSpawn = 5 + wave;
         float baseSpeed = 80f + wave * 8f;
 
         for (int i = 0; i < toSpawn; i++) {
-            spawnEnemyWithSpeed(baseSpeed);
+            spawnZombieWithSpeed(baseSpeed);
         }
 
         waveActive = true;
     }
 
-    private void spawnEnemyWithSpeed(float speed) {
+    private void spawnZombieWithSpeed(float speed) {
         if (enemies.size() >= maxEnemies) return;
         if (player == null) ensurePlayer();
         if (room == null) return;
 
         int tileSize = room.getTileSize();
-
-        // Use room pixel bounds NOT Gdx.graphics.getWidth/Height so this matches your virtual room
         float roomPixelW = room.getRoomWidth() * tileSize;
         float roomPixelH = room.getRoomHeight() * tileSize;
 
-        // Try a bunch of random positions
-        for (int tries = 0; tries < 200; tries++) {
-            float size = 22f + rng.nextFloat() * 10f;
+        // Keep this consistent since Zombie.draw uses getWidth()/getHeight()
+        float size = 28f;
 
+        for (int tries = 0; tries < 200; tries++) {
             float x = rng.nextFloat() * (roomPixelW - size);
             float y = rng.nextFloat() * (roomPixelH - size);
 
-            // Don’t spawn too close to player
+            // Don't spawn too close to player
             float px = player.getX() + player.getWidth() / 2f;
             float py = player.getY() + player.getHeight() / 2f;
             float ex = x + size / 2f;
@@ -241,35 +210,17 @@ public class GameWorld {
             float minDist = 120f;
             if (dx * dx + dy * dy < minDist * minDist) continue;
 
-            // NEW: reject if enemy overlaps any wall tiles
+            // Don't spawn in walls
             if (rectHitsWall(x, y, size, size)) continue;
 
-            enemies.add(new Enemy(x, y, speed, size, 3));
+            enemies.add(new Zombie(x, y, speed, size, 3));
             return;
         }
 
-        // Fallback: scan for first valid open tile
-        float size = 28f;
+        // Fallback scan
         float[] open = findFirstOpenSpot(size, 120f);
         if (open != null) {
-            enemies.add(new Enemy(open[0], open[1], speed, size, 3));
-        }
-        // else: no spawn this time (room is too full / blocked)
-    }
-
-
-    @SuppressWarnings("unused")
-    private void updateSpawning(float delta) {
-        difficultyTimer += delta;
-        if (difficultyTimer >= 5f) {
-            difficultyTimer = 0f;
-            spawnInterval = Math.max(minSpawnInterval, spawnInterval - 0.1f);
-        }
-
-        spawnTimer += delta;
-        if (spawnTimer >= spawnInterval) {
-            spawnTimer = 0f;
-            spawnEnemyWithSpeed(100f);
+            enemies.add(new Zombie(open[0], open[1], speed, size, 3));
         }
     }
 
@@ -308,19 +259,19 @@ public class GameWorld {
 
             b.update();
 
-            // Remove if hits wall tile
+            // Wall hit
             if (b.collidesWithRoom(grid, tileSize)) {
                 bullets.remove(i);
                 continue;
             }
 
-            // Remove if off screen
+            // Offscreen
             if (b.isOffScreen()) {
                 bullets.remove(i);
                 continue;
             }
 
-            // Bullet-enemy collisions
+            // Enemy hit
             boolean hitEnemy = false;
             for (int e = enemies.size() - 1; e >= 0; e--) {
                 Enemy enemy = enemies.get(e);
@@ -343,9 +294,7 @@ public class GameWorld {
                 }
             }
 
-            if (hitEnemy) {
-                bullets.remove(i);
-            }
+            if (hitEnemy) bullets.remove(i);
         }
     }
 
@@ -363,7 +312,7 @@ public class GameWorld {
             if (hit && !player.isInvulnerable()) {
                 player.takeDamage(1);
 
-                // Small knockback so you don't "stick"
+                // Knockback
                 float px = player.getX() + player.getWidth() / 2f;
                 float py = player.getY() + player.getHeight() / 2f;
                 float ex = enemy.getX() + enemy.getWidth() / 2f;
@@ -395,7 +344,6 @@ public class GameWorld {
     }
 
     private void generateOfferedUpgrades() {
-        // Simple: allow duplicates, but avoid nulls.
         offeredUpgrades[0] = randomUpgrade();
         offeredUpgrades[1] = randomUpgrade();
         offeredUpgrades[2] = randomUpgrade();
@@ -408,7 +356,6 @@ public class GameWorld {
     }
 
     private Upgrade randomUpgrade() {
-        // Names here must match applyUpgrade() checks
         int r = rng.nextInt(5);
         if (r == 0) return new Upgrade("Rapid Fire", "Fire rate +20%", cardTexture);
         if (r == 1) return new Upgrade("Runner", "Move speed +15%", cardTexture);
@@ -482,11 +429,10 @@ public class GameWorld {
         int roomW = room.getRoomWidth();
         int roomH = room.getRoomHeight();
 
-        // Compute tile indices covered by the rect
-        int left = clamp((int)(x / tileSize), 0, roomW - 1);
-        int right = clamp((int)((x + w - 1) / tileSize), 0, roomW - 1);
-        int bottom = clamp((int)(y / tileSize), 0, roomH - 1);
-        int top = clamp((int)((y + h - 1) / tileSize), 0, roomH - 1);
+        int left = clamp((int) (x / tileSize), 0, roomW - 1);
+        int right = clamp((int) ((x + w - 1) / tileSize), 0, roomW - 1);
+        int bottom = clamp((int) (y / tileSize), 0, roomH - 1);
+        int top = clamp((int) ((y + h - 1) / tileSize), 0, roomH - 1);
 
         for (int ty = bottom; ty <= top; ty++) {
             for (int tx = left; tx <= right; tx++) {
@@ -504,7 +450,6 @@ public class GameWorld {
         float px = player.getX() + player.getWidth() / 2f;
         float py = player.getY() + player.getHeight() / 2f;
 
-        // scan interior tiles (skip borders)
         for (int ty = 1; ty < roomH - 1; ty++) {
             for (int tx = 1; tx < roomW - 1; tx++) {
                 if (room.getTile(tx, ty) == 1) continue;
@@ -533,4 +478,13 @@ public class GameWorld {
 
     public int getCoins() { return coins; }
     public int getSouls() { return souls; }
+
+    /**
+     * Call from Main.dispose() to avoid leaking textures.
+     * IMPORTANT: Zombies use shared textures; dispose them once globally.
+     */
+    public void dispose() {
+        cardTexture.dispose();
+        Zombie.disposeShared(); // shared zombie sheet cleanup
+    }
 }
