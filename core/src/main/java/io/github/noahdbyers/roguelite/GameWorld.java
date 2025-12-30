@@ -53,6 +53,7 @@ public class GameWorld {
     private float bulletSpeed = 240f;
     private float bulletSize = 8f;
     private int bulletDamage = 1;
+    private final ArrayList<DamagePopup> damagePopups = new ArrayList<>();
 
     private final Texture cardTexture = new Texture("ui/upgrade_card.png");
     private final Random rng = new Random();
@@ -78,7 +79,7 @@ public class GameWorld {
     public int getWave() { return wave; }
 
     public Upgrade[] getOfferedUpgrades() { return offeredUpgrades; }
-
+    public ArrayList<DamagePopup> getDamagePopups() { return damagePopups; }
     public void setWeapon(Weapon weapon) {
         this.weapon = weapon;
         if (this.weapon != null) this.weapon.setAttackCooldown(0f);
@@ -122,6 +123,12 @@ public class GameWorld {
         handlePlayerEnemyContact();
         tryShootTowardsCursor(delta); // ✅ cursor aim
         updateBullets();
+
+        for (int i = damagePopups.size() - 1; i >= 0; i--) {
+            DamagePopup p = damagePopups.get(i);
+            p.update(delta);
+            if (p.isDead()) damagePopups.remove(i);
+        }
 
         // Wave management
         if (!waveActive) startWave();
@@ -256,6 +263,7 @@ public class GameWorld {
         float dirY = aimWorldY - sy;
 
         bullets.add(new Bullet(sx, sy, dirX, dirY, bulletSpeed, bulletSize));
+
         weapon.setAttackCooldown(weapon.getAttackCooldownTime());
     }
 
@@ -328,6 +336,15 @@ public class GameWorld {
 
                     enemy.takeDamage(bulletDamage);
                     if (audio != null) audio.playHit();
+                    enemy.takeDamage(bulletDamage);
+
+                    // add popup at enemy top
+                    damagePopups.add(new DamagePopup(
+                        enemy.getX() + enemy.getWidth() / 2f,
+                        enemy.getY() + enemy.getHeight(),
+                        bulletDamage
+                    ));
+
                     hitEnemy = true;
 
                     if (enemy.isDead()) {
