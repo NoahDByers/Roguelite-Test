@@ -3,6 +3,7 @@ package io.github.noahdbyers.roguelite;
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Input;
 import com.badlogic.gdx.graphics.Texture;
+import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 
 import java.util.ArrayList;
 import java.util.Random;
@@ -10,6 +11,7 @@ import java.util.Random;
 public class GameWorld {
     private final Room room;
 
+    private SpriteBatch spriteBatch;
     private Player player;
     private final ArrayList<Enemy> enemies = new ArrayList<>();
     private final ArrayList<Bullet> bullets = new ArrayList<>();
@@ -52,12 +54,14 @@ public class GameWorld {
     private float bulletSize = 8f;
     private int bulletDamage = 1;
 
-    private final Texture cardTexture = new Texture("upgrade_card.png");
+    private final Texture cardTexture = new Texture("ui/upgrade_card.png");
     private final Random rng = new Random();
 
-    public GameWorld(Room room, Player player) {
+    private AudioManager audio;
+    public GameWorld(Room room, Player player, SpriteBatch spriteBatch) {
         this.room = room;
         this.player = player;
+        this.spriteBatch = spriteBatch;
         restart();
     }
 
@@ -79,6 +83,8 @@ public class GameWorld {
         this.weapon = weapon;
         if (this.weapon != null) this.weapon.setAttackCooldown(0f);
     }
+
+    public void setAudio(AudioManager audio) { this.audio = audio; }
 
     // -------------------- Update loop --------------------
     public void update(float delta) {
@@ -321,6 +327,7 @@ public class GameWorld {
                     enemy.getX(), enemy.getY(), enemy.getWidth(), enemy.getHeight())) {
 
                     enemy.takeDamage(bulletDamage);
+                    if (audio != null) audio.playHit();
                     hitEnemy = true;
 
                     if (enemy.isDead()) {
@@ -363,7 +370,6 @@ public class GameWorld {
                 float knockX = dx * push;
                 float knockY = dy * push;
 
-                applyKnockbackWithCollision(player, knockX, knockY, room, room.getTileSize());
                 player.clampToScreen();
             }
         }
