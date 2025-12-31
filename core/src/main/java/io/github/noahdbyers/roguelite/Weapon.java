@@ -23,15 +23,17 @@ public class Weapon {
     private int storedFrame = 0;
     private float drawX;
     private float drawY;
+    private int damage;
 
 
-    Weapon(String name, float attackCooldownTime, float width, float height, TextureRegion weaponTexture, ArrayList<TextureRegion> frames) {
+    Weapon(String name, float attackCooldownTime, float width, float height, int damage, TextureRegion weaponTexture, ArrayList<TextureRegion> frames) {
         this.name = name;
         this.attackCooldownTime = attackCooldownTime;
         this.weaponTexture = weaponTexture;
         this.frames = frames;
         this.width = width;
         this.height = height;
+        this.damage = damage;
     }
 
     public void draw(SpriteBatch spriteBatch, float delta, Vector2 drawLocationIgnored, Player player, Vector2 mouseWorld) {
@@ -144,6 +146,10 @@ public class Weapon {
         this.animate = status;
     }
 
+    public void setDamge(int damage) {
+        this.damage = damage;
+    }
+
     public Vector2 getDrawCoords(Vector2 mouseWorld, Player player) {
         float px;
         float py = player.getY() + 35f;
@@ -199,5 +205,9 @@ public class Weapon {
 
         Vector2 drawCoords = new Vector2(drawX, drawY);
         return drawCoords;
+    }
+
+    public int getDamage() {
+        return damage;
     }
 }

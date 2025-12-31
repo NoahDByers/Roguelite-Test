@@ -16,7 +16,12 @@ public class Player extends Entity {
     private Facing facing = Facing.DOWN;
     private Facing lastFacing = Facing.DOWN;
 
-    //Movement
+    // Attack-facing lock
+    // While > 0, the player cannot change facing direction.
+    private float attackLockTimer = 0f;
+    private Facing lockedFacing = Facing.DOWN;
+
+    // Movement
     private boolean isMoving = false;
     private boolean lastMoving = false;
 
@@ -47,13 +52,12 @@ public class Player extends Entity {
     private final ArrayList<TextureRegion> rightIdleFrames = new ArrayList<>();
     private final ArrayList<TextureRegion> upIdleFrames = new ArrayList<>();
 
-    // Optional (only use if you actually fill them)
     private final ArrayList<TextureRegion> downRunFrames = new ArrayList<>();
     private final ArrayList<TextureRegion> rightRunFrames = new ArrayList<>();
     private final ArrayList<TextureRegion> upRunFrames = new ArrayList<>();
 
     // Stats / timers
-    private int maxHealth = 5;
+    private int maxHealth = 500000;
     private int health = 500000;
 
     private int mana = health;
@@ -68,8 +72,6 @@ public class Player extends Entity {
         idleSheet = new Texture("player/Idle.png");
         runSheet = new Texture("player/Run.png");
 
-        // NOTE: These values must match your sheet.
-        // If your sheet is actually 16x32 frames, set fh=32 and adjust Y rows accordingly.
         final int fw = 16;
         final int fh = 24;
 
@@ -83,100 +85,142 @@ public class Player extends Entity {
             rightIdleFrames.add(new TextureRegion(idleSheet, x0, RIGHT_Y, fw, fh));
             upIdleFrames.add(new TextureRegion(idleSheet, x0, UP_Y,     fw, fh));
         }
-        // If/when you add run frames, fill downRunFrames/rightRunFrames/upRunFrames here.
 
         for (int i = 0; i < 6; i++) {
             int x0 = i * fw;
-            downRunFrames.add(new TextureRegion(runSheet, x0, 5, fw, 26));
+            downRunFrames.add(new TextureRegion(runSheet, x0, 5,   fw, 26));
             rightRunFrames.add(new TextureRegion(runSheet, x0, 69, fw, 26));
-            upRunFrames.add(new TextureRegion(runSheet, x0, 132, fw, 26));
+            upRunFrames.add(new TextureRegion(runSheet, x0, 132,   fw, 26));
+        }
+    }
+
+    /**
+     * Call this when the attack animation starts.
+     * For the duration, facing changes are ignored (WASD and setFacing()).
+     */
+    public void startAttackLock(float durationSeconds) {
+        if (durationSeconds <= 0f) return;
+
+        // Lock to whatever direction we are currently facing
+        lockedFacing = facing;
+
+        // Keep the longer lock if overlapping attacks happen
+        if (durationSeconds > attackLockTimer) {
+            attackLockTimer = durationSeconds;
+        }
+    }
+
+    /** True if the player is currently locked from changing facing direction. */
+    public boolean isAttackLocked() {
+        return attackLockTimer > 0f;
+    }
+
+    /**
+     * If you ever want to lock to a specific facing (e.g., aim direction),
+     * call this instead of setFacing + startAttackLock.
+     */
+    public void startAttackLock(float durationSeconds, Facing lockTo) {
+        if (durationSeconds <= 0f) return;
+        if (lockTo != null) {
+            lockedFacing = lockTo;
+            facing = lockTo; // immediately face that way
+        } else {
+            lockedFacing = facing;
+        }
+
+        if (durationSeconds > attackLockTimer) {
+            attackLockTimer = durationSeconds;
         }
     }
 
     public void update(Room room, int tileSize) {
         float delta = Gdx.graphics.getDeltaTime();
 
+        // Dash movement (kept as-is)
         if (isDashing()) {
             float oldX = getX();
             float oldY = getY();
 
-            //moveX
             setX(oldX + dashVX * delta);
             if (collidesWithRoom(room.getRoom(), tileSize, room.getRoomWidth(),
                 room.getRoomHeight())) setX(oldX);
 
-            //moveY
             setY(oldY + dashVY * delta);
             if (collidesWithRoom(room.getRoom(), tileSize, room.getRoomWidth(),
                 room.getRoomHeight())) setY(oldY);
 
             clampToScreen();
-            return; //Exits the update function, skipping normal movement while dashing
+            return;
         }
 
-        float moveX = 0f;
-        float moveY = 0f;
+        if(!isAttackLocked()) {
+            float moveX = 0f;
+            float moveY = 0f;
 
-        boolean left  = Gdx.input.isKeyPressed(Input.Keys.A);
-        boolean right = Gdx.input.isKeyPressed(Input.Keys.D);
-        boolean down  = Gdx.input.isKeyPressed(Input.Keys.S);
-        boolean up    = Gdx.input.isKeyPressed(Input.Keys.W);
+            boolean left = Gdx.input.isKeyPressed(Input.Keys.A);
+            boolean right = Gdx.input.isKeyPressed(Input.Keys.D);
+            boolean down = Gdx.input.isKeyPressed(Input.Keys.S);
+            boolean up = Gdx.input.isKeyPressed(Input.Keys.W);
 
-        // Facing priority (horizontal > vertical)
-        if (left && !right) facing = Facing.LEFT;
-        else if (right && !left) facing = Facing.RIGHT;
-        else if (down && !up) facing = Facing.DOWN;
-        else if (up && !down) facing = Facing.UP;
+            // Facing priority (horizontal > vertical)
+            // IMPORTANT: only allow changing facing if not attack-locked.
+            if (!isAttackLocked()) {
+                if (left && !right) facing = Facing.LEFT;
+                else if (right && !left) facing = Facing.RIGHT;
+                else if (down && !up) facing = Facing.DOWN;
+                else if (up && !down) facing = Facing.UP;
+            } else {
+                // Ensure facing stays at the lockedFacing even if something else modified it
+                facing = lockedFacing;
+            }
 
-        // Intended movement
-        if (left)  moveX -= getSpeed() * delta;
-        if (right) moveX += getSpeed() * delta;
-        if (down)  moveY -= getSpeed() * delta;
-        if (up)    moveY += getSpeed() * delta;
+            // Intended movement (movement is still allowed during attack lock)
+            if (left) moveX -= getSpeed() * delta;
+            if (right) moveX += getSpeed() * delta;
+            if (down) moveY -= getSpeed() * delta;
+            if (up) moveY += getSpeed() * delta;
 
-        float oldX = getX();
-        float oldY = getY();
+            float oldX = getX();
+            float oldY = getY();
 
-        setX(oldX + moveX);
-        if (collidesWithRoom(room.getRoom(), tileSize, room.getRoomWidth(), room.getRoomHeight())) {
-            setX(oldX);
-        }
+            setX(oldX + moveX);
+            if (collidesWithRoom(room.getRoom(), tileSize, room.getRoomWidth(), room.getRoomHeight())) {
+                setX(oldX);
+            }
 
-        setY(oldY + moveY);
-        if (collidesWithRoom(room.getRoom(), tileSize, room.getRoomWidth(), room.getRoomHeight())) {
-            setY(oldY);
-        }
+            setY(oldY + moveY);
+            if (collidesWithRoom(room.getRoom(), tileSize, room.getRoomWidth(), room.getRoomHeight())) {
+                setY(oldY);
+            }
 
-        boolean newMoving = (getX() != oldX) || (getY() != oldY);
+            boolean newMoving = (getX() != oldX) || (getY() != oldY);
 
-        boolean stateChanged =
-            (facing != lastFacing) ||
-                (newMoving && !lastMoving) ||
-                (!newMoving && lastMoving);
+            boolean stateChanged =
+                (facing != lastFacing) ||
+                    (newMoving && !lastMoving) ||
+                    (!newMoving && lastMoving);
 
-        isMoving = newMoving;
+            isMoving = newMoving;
 
-        // Reset the animation when we change direction OR start/stop moving
-        if (stateChanged) {
-            animTimer = 0f;
-            frameIndex = 0;
-            lastFacing = facing;
-            lastMoving = isMoving;
-        } else {
-            lastMoving = isMoving;
+            // Reset the animation when we change direction OR start/stop moving
+            if (stateChanged) {
+                animTimer = 0f;
+                frameIndex = 0;
+                lastFacing = facing;
+                lastMoving = isMoving;
+            } else {
+                lastMoving = isMoving;
+            }
         }
     }
 
-    /**
-     * Returns the correct animation frames.
-     * IMPORTANT: if run frames aren't loaded yet, fall back to idle frames.
-     */
     private ArrayList<TextureRegion> getFramesForFacing() {
         if (facing == Facing.UP && isMoving) return upRunFrames;
         if ((facing == Facing.LEFT || facing == Facing.RIGHT) && isMoving) return rightRunFrames;
         if (facing == Facing.DOWN && isMoving) return downRunFrames;
-        if(facing == Facing.UP && !isMoving) return upIdleFrames;
-        if((facing == Facing.LEFT || facing == Facing.RIGHT) && !isMoving) return rightIdleFrames;
+
+        if (facing == Facing.UP && !isMoving) return upIdleFrames;
+        if ((facing == Facing.LEFT || facing == Facing.RIGHT) && !isMoving) return rightIdleFrames;
         return downIdleFrames;
     }
 
@@ -184,10 +228,8 @@ public class Player extends Entity {
         ArrayList<TextureRegion> frames = getFramesForFacing();
         if (frames.isEmpty()) return;
 
-        // Choose frame time based on state
         float frameTime = isMoving ? RUN_FRAME_TIME : IDLE_FRAME_TIME;
 
-        // Advance animation ALWAYS (idle and run)
         animTimer += delta;
         while (animTimer >= frameTime) {
             animTimer -= frameTime;
@@ -203,7 +245,6 @@ public class Player extends Entity {
         float drawW = 32f;
         float drawH = 48f;
 
-        // Mirror for LEFT without mutating TextureRegion
         boolean flipX = (facing == Facing.LEFT);
         float x = flipX ? (getX() + drawW) : getX();
         float w = flipX ? -drawW : drawW;
@@ -219,6 +260,18 @@ public class Player extends Entity {
 
         if (dashCooldown > 0f) dashCooldown -= delta;
         if (dashTimer > 0f) dashTimer -= delta;
+
+        // Attack-facing lock timer
+        if (attackLockTimer > 0f) {
+            attackLockTimer -= delta;
+            if (attackLockTimer <= 0f) {
+                attackLockTimer = 0f;
+                // lock ends; facing remains whatever it currently is (lockedFacing == facing)
+            } else {
+                // Keep facing pinned during the lock
+                facing = lockedFacing;
+            }
+        }
     }
 
     public boolean isInvulnerable() { return invulnTimer > 0f; }
@@ -271,7 +324,13 @@ public class Player extends Entity {
         return Math.max(lo, Math.min(hi, v));
     }
 
+    /**
+     * External facing setter.
+     * IMPORTANT: now respects attack lock (ignores changes during the lock).
+     */
     public void setFacing(Facing facing) {
+        if (facing == null) return;
+        if (isAttackLocked()) return; // ignore during attack animation
         this.facing = facing;
     }
 
@@ -294,5 +353,6 @@ public class Player extends Entity {
         runSheet.dispose();
     }
 
+    // Unused overload present in your original class; kept to avoid breaking callers.
     public void update() {}
 }

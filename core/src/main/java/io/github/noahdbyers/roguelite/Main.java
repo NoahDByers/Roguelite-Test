@@ -166,7 +166,7 @@ public class Main extends ApplicationAdapter {
         Collections.addAll(titleScreenButtons, marketButton, settingsCogButton, playButton);
 
         broadsword = new Weapon("Iron Broadsword",
-            0.25f, 64, 64, broadswordRegion, swordSwing);
+            0.25f, 64, 64, 1, broadswordRegion, swordSwing);
 
         // Do NOT create the world here — only when starting run
     }

@@ -9,7 +9,7 @@ import com.badlogic.gdx.graphics.g2d.GlyphLayout;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.utils.Align;
-import com.badlogic.gdx.graphics.g2d.TextureRegion;
+import com.badlogic.gdx.math.Vector2;
 
 import java.util.ArrayList;
 
@@ -20,7 +20,7 @@ public class UserInterface {
     private final GameWorld world;
     private final ShapeRenderer shapeRenderer;
     private final SpriteBatch spriteBatch;
-    private final ArrayList<Entity> entities;
+    private final ArrayList<Entity> entities; // kept for compatibility; not used here
 
     private final BitmapFont font = new BitmapFont();
     private final GlyphLayout layout = new GlyphLayout();
@@ -35,17 +35,17 @@ public class UserInterface {
     private final Color bulletColor = new Color(1f, 1f, 0f, 1f);
 
     // UI textures
-    private Texture uiBarBg = new Texture("ui/BarIcon.png");
-    private Texture uiBarManaBg = new Texture("ui/ManaBarIcon.png");
-    private Texture uiBarHealthFill = new Texture("ui/FullHPBar.png");
-    private Texture uiBarManaFill = new Texture("ui/FullManaBar.png");
+    private final Texture uiBarBg = new Texture("ui/BarIcon.png");
+    private final Texture uiBarManaBg = new Texture("ui/ManaBarIcon.png");
+    private final Texture uiBarHealthFill = new Texture("ui/FullHPBar.png");
+    private final Texture uiBarManaFill = new Texture("ui/FullManaBar.png");
 
-    private Texture iconHeart = new Texture("ui/HeartIcon.png");
-    private Texture iconMana = new Texture("ui/ManaIcon.png");
-    private Texture iconCoin = new Texture("ui/CoinIcon.png");
-    private Texture iconSoul = new Texture("ui/SoulIcon.png");
-    private Texture iconKill = new Texture("ui/SkullIcon.png");
-    private Texture iconWave = new Texture("ui/ClearIcon.png");
+    private final Texture iconHeart = new Texture("ui/HeartIcon.png");
+    private final Texture iconMana = new Texture("ui/ManaIcon.png");
+    private final Texture iconCoin = new Texture("ui/CoinIcon.png");
+    private final Texture iconSoul = new Texture("ui/SoulIcon.png");
+    private final Texture iconKill = new Texture("ui/SkullIcon.png");
+    private final Texture iconWave = new Texture("ui/ClearIcon.png");
 
     // Layout
     private static final int UPGRADE_COUNT = 3;
@@ -59,6 +59,10 @@ public class UserInterface {
     private static final float BOX_Y_FRAC = 0.44f;
     private static final float BOX_W_FRAC = 0.64f;
     private static final float BOX_H_FRAC = 0.22f;
+
+    // Reused vectors to avoid per-frame allocations
+    private final Vector2 tmpMouseWorld = new Vector2();
+    private final Vector2 tmpIgnored = new Vector2();
 
     public UserInterface(float width, float height,
                          GameWorld world,
@@ -83,28 +87,28 @@ public class UserInterface {
         float delta = Gdx.graphics.getDeltaTime();
 
         // ----------------------------
-        // 1) WORLD (SpriteBatch): tiles + sprites (player + zombies)
+        // 1) WORLD (SpriteBatch): tiles + sprites + weapon
         // ----------------------------
         spriteBatch.begin();
         drawWorldTilesSafe();
-        drawSpritesSafe(delta);   // ✅ player + zombies drawn here
+        drawSpritesSafe(delta); // enemies + player
+
+        // Draw weapon (safe if null)
+        Weapon w = world.getWeapon();
         Player p = world.getPlayer();
-        if (p != null) {
-            p.draw(spriteBatch, Gdx.graphics.getDeltaTime());
+        if (w != null && p != null) {
+            tmpMouseWorld.set(world.getAimWorldX(), world.getAimWorldY());
+            w.draw(spriteBatch, delta, tmpIgnored, p, tmpMouseWorld);
         }
 
-        world.getWeapon().draw(spriteBatch, delta, world.getAttackPosition(), world.getPlayer(), world.getAimWorld());
         spriteBatch.end();
 
+        // Debug draw melee hitboxes
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
-        shapeRenderer.setColor(0f, 1f, 1f, 0.35f);
-        for (AttackHitbox hb : world.getMeleeHitboxes()) {
-            shapeRenderer.rect(hb.rect.x, hb.rect.y, hb.rect.width, hb.rect.height);
-        }
         shapeRenderer.end();
 
         // ----------------------------
-        // 2) WORLD (ShapeRenderer): bullets (and any debug shapes)
+        // 2) WORLD (ShapeRenderer): bullets
         // ----------------------------
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
         drawBulletsSafe();
@@ -122,8 +126,10 @@ public class UserInterface {
 
         if (world.isChoosingUpgrade()) {
             updateSelectionHighlight();
-            drawUpgradeCards(world.getOfferedUpgrades());
-            drawUpgradeCardTextInWhiteBox(world.getOfferedUpgrades());
+            Upgrade[] offered = world.getOfferedUpgrades();
+
+            drawUpgradeCards(offered);
+            drawUpgradeCardTextInWhiteBox(offered);
 
             font.setColor(Color.WHITE);
             font.getData().setScale(1.05f);
@@ -160,25 +166,22 @@ public class UserInterface {
     }
 
     // ----------------------------
-    // World drawing (sprites): player + zombies
+    // World drawing (sprites): enemies + player
     // ----------------------------
     private void drawSpritesSafe(float delta) {
-        // Player
-        Player p = world.getPlayer();
-        if (p != null) {
-            p.draw(spriteBatch, delta);
-        }
-
-        // Enemies: draw zombies as sprites
+        // Enemies first
         for (Enemy e : world.getEnemies()) {
             if (e == null) continue;
 
             if (e instanceof Zombie) {
                 ((Zombie) e).draw(spriteBatch, delta);
-            } else {
-                // If you ever have non-zombie enemies, you can draw them later.
-                // For now, do nothing here (they could still be drawn as shapes if desired).
             }
+        }
+
+        // Player last (so player is drawn over enemies if overlapping)
+        Player p = world.getPlayer();
+        if (p != null) {
+            p.draw(spriteBatch, delta);
         }
     }
 
@@ -204,8 +207,11 @@ public class UserInterface {
         float startY = height - 448;
         float rowGap = 20;
 
-        drawManaBar(iconMana, uiBarManaBg, uiBarManaFill, startX + 45, startY + rowGap, p.getMana() / (float) p.getMaxMana());
-        drawHealthBar(iconHeart, uiBarBg, uiBarHealthFill, startX, startY, p.getHealth() / (float) p.getMaxHealth());
+        float manaPct = (p.getMaxMana() <= 0) ? 0f : (p.getMana() / (float) p.getMaxMana());
+        float hpPct = (p.getMaxHealth() <= 0) ? 0f : (p.getHealth() / (float) p.getMaxHealth());
+
+        drawManaBar(iconMana, uiBarManaBg, uiBarManaFill, startX + 45, startY + rowGap, manaPct);
+        drawHealthBar(iconHeart, uiBarBg, uiBarHealthFill, startX, startY, hpPct);
 
         drawSmallStat(iconCoin, startX + 405, 485, "     " + world.getCoins());
         drawSmallStat(iconSoul, startX + 425, 440, "" + world.getSouls());
@@ -318,7 +324,7 @@ public class UserInterface {
     }
 
     // ----------------------------
-    // Bars / stats (unchanged)
+    // Bars / stats
     // ----------------------------
     private void drawHealthBar(Texture icon, Texture frame, Texture fill, float x, float y, float percent) {
         percent = Math.max(0f, Math.min(1f, percent));
@@ -390,6 +396,7 @@ public class UserInterface {
 
     private void drawDamagePopups() {
         for (DamagePopup p : world.getDamagePopups()) {
+            if (p == null) continue;
             font.draw(spriteBatch, "" + p.amount, p.x, p.y);
         }
     }

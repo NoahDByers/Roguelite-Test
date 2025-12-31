@@ -6,6 +6,12 @@ audio/music/cemetery_pcm.wav
 audio/music/main_theme_pcm.wav
 audio/sfx/combatSFX/hit_pcm.wav
 audio/sfx/combatSFX/shoot_pcm.wav
+audio/sfx/combatSFX/sword_hit_1_pcm.wav
+audio/sfx/combatSFX/sword_hit_2_pcm.wav
+audio/sfx/combatSFX/sword_hit_3_pcm.wav
+audio/sfx/combatSFX/sword_miss_1_pcm.wav
+audio/sfx/combatSFX/sword_miss_2_pcm.wav
+audio/sfx/combatSFX/sword_miss_3_pcm.wav
 audio/sfx/uiSFX/Minimalist3_pcm.wav
 cemetery/cemeteryFloor.png
 cemetery/cemeteryTiles.png
