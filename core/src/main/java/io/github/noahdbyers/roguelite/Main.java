@@ -2,8 +2,8 @@ package io.github.noahdbyers.roguelite;
 
 import com.badlogic.gdx.ApplicationAdapter;
 import com.badlogic.gdx.Gdx;
+import com.badlogic.gdx.Input;
 import com.badlogic.gdx.math.Vector2;
-import com.badlogic.gdx.math.Vector3;
 import com.badlogic.gdx.utils.ScreenUtils;
 import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
@@ -17,6 +17,7 @@ import com.badlogic.gdx.utils.viewport.Viewport;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Random;
 
 public class Main extends ApplicationAdapter {
 
@@ -60,13 +61,13 @@ public class Main extends ApplicationAdapter {
     private Texture cemeteryTiles;
     private Texture cemeteryFloor;
 
-    //Weapon Textures
+    // Weapon textures
     private Texture swordSheet;
     private TextureRegion broadswordRegion;
     private ArrayList<TextureRegion> swordSwing;
     private Texture swordSwingSheet;
 
-    //Weapon objects
+    // Weapon objects
     private Weapon broadsword;
 
     // Game objects
@@ -82,10 +83,29 @@ public class Main extends ApplicationAdapter {
     private ArrayList<Button> titleScreenButtons;
     private boolean titleScreen = true;
 
-    //Creating the audio manager
+    // Audio manager
     private AudioManager audio;
 
-    private Vector2 mouseWorld = new Vector2();
+    // Mouse in world coords
+    private final Vector2 mouseWorld = new Vector2();
+
+    // -------------------- Screen shake --------------------
+    private final Random shakeRng = new Random();
+    private float shakeTime = 0f;
+    private float shakeDuration = 0.12f;
+    private float shakeIntensity = 6f;
+
+    // If you want camera follow, we use these as base and then add shake.
+    private float baseCamX = VIRTUAL_WIDTH / 2f;
+    private float baseCamY = VIRTUAL_HEIGHT / 2f;
+
+    /** Call this from GameWorld (through a callback) to trigger screen shake. */
+    public void addShake(float intensity, float duration) {
+        // Keep the strongest/longest if multiple hits happen close together
+        shakeIntensity = Math.max(shakeIntensity, intensity);
+        shakeDuration = Math.max(shakeDuration, duration);
+        shakeTime = shakeDuration;
+    }
 
     @Override
     public void create() {
@@ -99,6 +119,7 @@ public class Main extends ApplicationAdapter {
         camera = new OrthographicCamera();
         viewport = new FitViewport(VIRTUAL_WIDTH, VIRTUAL_HEIGHT, camera);
         viewport.apply(true);
+
         camera.position.set(VIRTUAL_WIDTH / 2f, VIRTUAL_HEIGHT / 2f, 0);
         camera.update();
 
@@ -106,10 +127,11 @@ public class Main extends ApplicationAdapter {
         titleScreenBackgroundTex = new Texture("ui/title_screen.png");
         generalAssets = new Texture("ui/general_assets.png");
         uiBanners = new Texture("ui/bannerSpritesheet.png");
+
         swordSheet = new Texture("weapons/File.png");
         broadswordRegion = new TextureRegion(swordSheet, 0, 192, 64, 64);
-        swordSwingSheet = new Texture("weapons/swordSwing.png");
 
+        swordSwingSheet = new Texture("weapons/swordSwing.png");
         swordSwing = new ArrayList<>();
         Collections.addAll(swordSwing,
             new TextureRegion(swordSwingSheet, 0, 0, 32, 32),
@@ -122,12 +144,12 @@ public class Main extends ApplicationAdapter {
         cemeteryTiles = new Texture("cemetery/cemeteryTiles.png");
         cemeteryFloor = new Texture("cemetery/cemeteryFloor.png");
 
-        //Load audio
+        // Audio
         audio = new AudioManager();
         audio.load();
-        audio.startMainMusic(); // start title music (or keep it off until play)
+        audio.startMainMusic();
 
-        // Pixel art settings (helps, but seams are mostly from fractional scaling)
+        // Pixel art settings
         cemeteryTiles.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
         cemeteryFloor.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
         cemeteryTiles.setWrap(Texture.TextureWrap.ClampToEdge, Texture.TextureWrap.ClampToEdge);
@@ -146,25 +168,29 @@ public class Main extends ApplicationAdapter {
         Collections.addAll(basicButtonTextures,
             new TextureRegion(uiBanners, 816, 16, 64, 26),
             new TextureRegion(uiBanners, 736, 16, 64, 26),
-            new TextureRegion(uiBanners, 896, 16, 64, 26));
+            new TextureRegion(uiBanners, 896, 16, 64, 26)
+        );
 
         Collections.addAll(settingsCogTextures,
             new TextureRegion(generalAssets, 84, 372, 32, 32),
             new TextureRegion(generalAssets, 84, 404, 32, 32),
-            new TextureRegion(generalAssets, 84, 404, 32, 32));
+            new TextureRegion(generalAssets, 84, 404, 32, 32)
+        );
 
         Collections.addAll(marketButtonTextures,
             new TextureRegion(generalAssets, 116, 372, 32, 32),
             new TextureRegion(generalAssets, 116, 404, 32, 32),
-            new TextureRegion(generalAssets, 116, 404, 32, 32));
+            new TextureRegion(generalAssets, 116, 404, 32, 32)
+        );
 
-        // Create title screen buttons
+        // Title screen buttons
         marketButton = new Button(205, 20, 80, 80, null, marketButtonTextures);
         settingsCogButton = new Button(45, 20, 80, 80, null, settingsCogTextures);
         playButton = new Button(45, 360, 240, 80, "PLAY", basicButtonTextures);
 
         Collections.addAll(titleScreenButtons, marketButton, settingsCogButton, playButton);
 
+        // Weapon object
         broadsword = new Weapon("Iron Broadsword",
             0.5f, 64, 64, 1, broadswordRegion, swordSwing);
 
@@ -187,6 +213,9 @@ public class Main extends ApplicationAdapter {
 
     /** Creates a fresh run (room/player/world/UI) safely. */
     private void startNewRun() {
+        // Reset shake
+        shakeTime = 0f;
+
         if (player != null) {
             player.dispose();
             player = null;
@@ -202,17 +231,24 @@ public class Main extends ApplicationAdapter {
 
         room = new Room(32, 20, 15, starterRoom, makeCemeteryTileset());
         room.setViewport(viewport);
+
         player = new Player(100, 100, 170, 32, 32);
+
         world = new GameWorld(room, player, spriteBatch);
         world.setAudio(audio);
         world.setWeapon(broadsword);
+
+        // IMPORTANT: GameWorld must implement setScreenShake(...) for this to compile.
+        // Example signature:
+        // public interface ScreenShake { void addShake(float intensity, float duration); }
+        // public void setScreenShake(ScreenShake s) { this.shake = s; }
+        world.setScreenShake(this::addShake);
 
         UI = new UserInterface(VIRTUAL_WIDTH, VIRTUAL_HEIGHT, world, shapeRenderer, new ArrayList<>(), spriteBatch);
     }
 
     /**
-     * ✅ Integer-scaled viewport on resize (prevents tile seams when resizing).
-     * Keeps the game scaled by 1x/2x/3x... of the virtual resolution.
+     * Integer-scaled viewport on resize (prevents tile seams when resizing).
      */
     @Override
     public void resize(int width, int height) {
@@ -238,20 +274,21 @@ public class Main extends ApplicationAdapter {
     public void render() {
         ScreenUtils.clear(0.15f, 0.15f, 0.2f, 1f);
 
-        // ✅ Always re-apply viewport and matrices (especially after resize)
         viewport.apply();
 
-        // ✅ Snap camera to whole pixels (avoids subpixel seams/jitter)
-        camera.position.set(Math.round(camera.position.x), Math.round(camera.position.y), 0f);
-        camera.update();
-
-        spriteBatch.setProjectionMatrix(camera.combined);
-        shapeRenderer.setProjectionMatrix(camera.combined);
-
+        // Update mouse world position (for both title and gameplay)
         mouseWorld.set(Gdx.input.getX(), Gdx.input.getY());
         viewport.unproject(mouseWorld);
 
         if (titleScreen) {
+            // Title screen camera (stable)
+            baseCamX = VIRTUAL_WIDTH / 2f;
+            baseCamY = VIRTUAL_HEIGHT / 2f;
+            updateCameraWithShake(Gdx.graphics.getDeltaTime());
+
+            spriteBatch.setProjectionMatrix(camera.combined);
+            shapeRenderer.setProjectionMatrix(camera.combined);
+
             spriteBatch.begin();
 
             spriteBatch.draw(titleScreenBackgroundTex, 0, 0, VIRTUAL_WIDTH, VIRTUAL_HEIGHT);
@@ -270,8 +307,10 @@ public class Main extends ApplicationAdapter {
                 playButton.setCurrTextureIndex(2);
                 audio.playUIClick();
                 audio.stopMainMusic();
+
                 startNewRun();
                 titleScreen = false;
+
                 audio.startGameMusic();
             }
 
@@ -279,49 +318,101 @@ public class Main extends ApplicationAdapter {
             font.draw(spriteBatch, "CLASS", 395, 438, 100, Align.center, true);
 
             spriteBatch.end();
-        } else {
-            float delta = Gdx.graphics.getDeltaTime();
-            if (world != null) {
-                // Convert mouse screen -> world using the SAME viewport you render with
-                com.badlogic.gdx.math.Vector2 mouse = new com.badlogic.gdx.math.Vector2(Gdx.input.getX(), Gdx.input.getY());
-                viewport.unproject(mouse);
-                world.update(delta);
-                world.setAimWorld(mouseWorld.x, mouseWorld.y);
+            return;
+        }
+
+        // -------------------- Gameplay --------------------
+        float delta = Gdx.graphics.getDeltaTime();
+
+        if (world != null) {
+            // Set aim BEFORE update so attack uses current mouse position this frame
+            world.setAimWorld(mouseWorld.x, mouseWorld.y);
+
+            // Update camera base to follow player (optional but usually desirable)
+            if (player != null && room != null) {
+                float px = player.getX() + player.getWidth() * 0.5f;
+                float py = player.getY() + player.getHeight() * 0.5f;
+
+                // Clamp camera to room bounds so you don't show outside the map
+                float roomW = room.getRoomWidth() * room.getTileSize();
+                float roomH = room.getRoomHeight() * room.getTileSize();
+
+                float halfW = VIRTUAL_WIDTH * 0.5f;
+                float halfH = VIRTUAL_HEIGHT * 0.5f;
+
+                baseCamX = clampf(px, halfW, Math.max(halfW, roomW - halfW));
+                baseCamY = clampf(py, halfH, Math.max(halfH, roomH - halfH));
+            } else {
+                baseCamX = VIRTUAL_WIDTH / 2f;
+                baseCamY = VIRTUAL_HEIGHT / 2f;
             }
-            if (UI != null) UI.drawQueue();
+
+            updateCameraWithShake(delta);
+
+            spriteBatch.setProjectionMatrix(camera.combined);
+            shapeRenderer.setProjectionMatrix(camera.combined);
+
+            world.update(delta);
         }
 
-        if (Gdx.input.justTouched()) {
-
+        if (UI != null) {
+            UI.drawQueue();
         }
+    }
+
+    private void updateCameraWithShake(float delta) {
+        float sx = 0f;
+        float sy = 0f;
+
+        if (shakeTime > 0f) {
+            shakeTime -= delta;
+            if (shakeTime < 0f) shakeTime = 0f;
+
+            float t = (shakeDuration <= 0f) ? 0f : (shakeTime / shakeDuration); // 1 -> 0
+            float strength = shakeIntensity * t * t; // ease out
+
+            sx = (shakeRng.nextFloat() * 2f - 1f) * strength;
+            sy = (shakeRng.nextFloat() * 2f - 1f) * strength;
+        }
+
+        // Snap to whole pixels for cleaner pixel-art rendering
+        float camX = Math.round(baseCamX + sx);
+        float camY = Math.round(baseCamY + sy);
+
+        camera.position.set(camX, camY, 0f);
+        camera.update();
+    }
+
+    private static float clampf(float v, float lo, float hi) {
+        return Math.max(lo, Math.min(hi, v));
     }
 
     @Override
     public void dispose() {
         if (UI != null) UI.dispose();
-        if (world != null) world.dispose(); // make sure GameWorld has a dispose()
+        if (world != null) world.dispose();
         if (player != null) player.dispose();
 
-        shapeRenderer.dispose();
-        spriteBatch.dispose();
-        font.dispose();
+        if (shapeRenderer != null) shapeRenderer.dispose();
+        if (spriteBatch != null) spriteBatch.dispose();
+        if (font != null) font.dispose();
 
-        world.dispose();
-        uiBanners.dispose();
-        titleScreenBackgroundTex.dispose();
-        generalAssets.dispose();
-        swordSheet.dispose();
+        if (uiBanners != null) uiBanners.dispose();
+        if (titleScreenBackgroundTex != null) titleScreenBackgroundTex.dispose();
+        if (generalAssets != null) generalAssets.dispose();
 
-        cemeteryTiles.dispose();
-        cemeteryFloor.dispose();
+        if (swordSheet != null) swordSheet.dispose();
+        if (swordSwingSheet != null) swordSwingSheet.dispose();
 
-        Zombie.disposeShared(); // if you’re using shared zombie textures
-        audio.dispose(); // if you have a singleton
+        if (cemeteryTiles != null) cemeteryTiles.dispose();
+        if (cemeteryFloor != null) cemeteryFloor.dispose();
+
+        Zombie.disposeShared();
+
+        if (audio != null) audio.dispose();
     }
-
 
     public void drawTitleScreen() {
         titleScreen = true;
-        // Do NOT dispose player/world/UI here; do it when starting a new run or in dispose().
     }
 }
