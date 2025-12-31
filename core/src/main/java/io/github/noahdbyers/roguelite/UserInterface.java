@@ -3,10 +3,12 @@ package io.github.noahdbyers.roguelite;
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Input;
 import com.badlogic.gdx.graphics.Color;
+import com.badlogic.gdx.graphics.Pixmap;
 import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.g2d.GlyphLayout;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
+import com.badlogic.gdx.graphics.g2d.TextureRegion;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.utils.Align;
 import com.badlogic.gdx.math.Vector2;
@@ -25,10 +27,13 @@ public class UserInterface {
     private final BitmapFont font = new BitmapFont();
     private final GlyphLayout layout = new GlyphLayout();
 
-    // Fallback card art (loaded once)
+    // Fallback card art
     private final Texture fallbackCardTexture = new Texture("ui/upgrade_card.png");
 
-    // Visual highlight only (GameWorld applies upgrades)
+    // 1x1 white pixel for overlays
+    private final Texture whitePixel;
+
+    // Visual highlight only
     private int selectedUpgradeIndex = -1;
 
     // Colors
@@ -47,22 +52,41 @@ public class UserInterface {
     private final Texture iconKill = new Texture("ui/SkullIcon.png");
     private final Texture iconWave = new Texture("ui/ClearIcon.png");
 
-    // Layout
+    // ----------------------------
+    // Upgrade layout tuning
+    // ----------------------------
     private static final int UPGRADE_COUNT = 3;
-    private static final float CARD_W = 170f;
-    private static final float CARD_H = 300f;
-    private static final float CARD_GAP = 18f;
-    private static final float SELECT_LIFT = 10f;
 
-    // Text box region inside card
-    private static final float BOX_X_FRAC = 0.18f;
-    private static final float BOX_Y_FRAC = 0.44f;
-    private static final float BOX_W_FRAC = 0.64f;
-    private static final float BOX_H_FRAC = 0.22f;
+    // Your frames are 256x256 with a lot of transparent padding.
+    // We'll draw them bigger and allow overlap (negative gap).
+    private static final float CLUSTER_WIDTH_FRAC = 0.95f; // how much of screen width the 3-star cluster uses
+    private static final float STAR_HEIGHT_FRAC = 0.58f;   // star size driven by screen height
+    private static final float STAR_MIN = 200f;
+    private static final float STAR_MAX = 340f;
+
+    private static final float GAP_MIN = -70f; // allow overlap to kill “empty padding” gap
+    private static final float GAP_MAX = 24f;
+
+    private static final float SELECT_LIFT = 14f;
+    private static final float PULSE_SPEED = 8f;
+    private static final float PULSE_AMT = 0.04f;
+
+    // ----------------------------
+    // Upgrade Animation State
+    // ----------------------------
+    private static final float CARD_FRAME_TIME = 0.03f;
+
+    private final float[] cardAnimTimer = new float[UPGRADE_COUNT];
+    private final int[] cardFrameIndex = new int[UPGRADE_COUNT];
+    private final boolean[] cardAnimFinished = new boolean[UPGRADE_COUNT];
+
+    private boolean wasChoosingUpgrade = false;
+    private int lastOfferedSignature = 0;
 
     // Reused vectors to avoid per-frame allocations
     private final Vector2 tmpMouseWorld = new Vector2();
-    private final Vector2 tmpIgnored = new Vector2();
+
+    private float uiTime = 0f;
 
     public UserInterface(float width, float height,
                          GameWorld world,
@@ -78,6 +102,12 @@ public class UserInterface {
 
         font.getData().setScale(1.0f);
         font.setColor(Color.WHITE);
+
+        Pixmap pm = new Pixmap(1, 1, Pixmap.Format.RGBA8888);
+        pm.setColor(Color.WHITE);
+        pm.fill();
+        whitePixel = new Texture(pm);
+        pm.dispose();
     }
 
     /** Call once per frame. */
@@ -85,27 +115,22 @@ public class UserInterface {
         if (world == null) return;
 
         float delta = Gdx.graphics.getDeltaTime();
+        uiTime += delta;
 
         // ----------------------------
         // 1) WORLD (SpriteBatch): tiles + sprites + weapon
         // ----------------------------
         spriteBatch.begin();
         drawWorldTilesSafe();
-        drawSpritesSafe(delta); // enemies + player
+        drawSpritesSafe(delta);
 
-        // Draw weapon (safe if null)
         Weapon w = world.getWeapon();
         Player p = world.getPlayer();
         if (w != null && p != null) {
             tmpMouseWorld.set(world.getAimWorldX(), world.getAimWorldY());
             w.draw(spriteBatch, delta, p, tmpMouseWorld);
         }
-
         spriteBatch.end();
-
-        // Debug draw melee hitboxes
-        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
-        shapeRenderer.end();
 
         // ----------------------------
         // 2) WORLD (ShapeRenderer): bullets
@@ -125,21 +150,20 @@ public class UserInterface {
         }
 
         if (world.isChoosingUpgrade()) {
+            // ✅ Correctly draw overlay without tinting everything afterwards
+            drawDimOverlay(0.55f);
+
+            handleUpgradeAnimationResetIfNeeded();
+            updateUpgradeCardAnimations(delta);
             updateSelectionHighlight();
-            Upgrade[] offered = world.getOfferedUpgrades();
 
-            drawUpgradeCards(offered);
-            drawUpgradeCardTextInWhiteBox(offered);
-
-            font.setColor(Color.WHITE);
-            font.getData().setScale(1.05f);
-            drawCenteredText("Choose an Upgrade (1 / 2 / 3)", width / 2f, height - 30);
-            font.getData().setScale(1.0f);
+            drawUpgradeScene(world.getOfferedUpgrades());
         } else {
             selectedUpgradeIndex = -1;
         }
 
         if (world.isGameOver()) {
+            drawDimOverlay(0.55f);
             font.setColor(Color.WHITE);
             font.getData().setScale(1.2f);
             drawCenteredText("GAME OVER - Press R to Restart", width / 2f, height / 2f + 10);
@@ -147,6 +171,240 @@ public class UserInterface {
         }
 
         spriteBatch.end();
+
+        wasChoosingUpgrade = world.isChoosingUpgrade();
+    }
+
+    /**
+     * ✅ FIX: never save spriteBatch.getColor() as a reference.
+     * Save RGBA floats, then restore them.
+     */
+    private void drawDimOverlay(float alpha) {
+        Color c = spriteBatch.getColor();
+        float r = c.r, g = c.g, b = c.b, a = c.a;
+
+        spriteBatch.setColor(0f, 0f, 0f, alpha);
+        spriteBatch.draw(whitePixel, 0f, 0f, width, height);
+
+        spriteBatch.setColor(r, g, b, a);
+    }
+
+    // ----------------------------
+    // Upgrade scene
+    // ----------------------------
+    private void drawUpgradeScene(Upgrade[] offered) {
+        // Title
+        font.setColor(Color.WHITE);
+        font.getData().setScale(1.15f);
+        drawCenteredText("Choose an Upgrade", width / 2f, height - 34f);
+        font.getData().setScale(1.0f);
+
+        float clusterW = width * CLUSTER_WIDTH_FRAC;
+
+        float desiredStar = clamp(height * STAR_HEIGHT_FRAC, STAR_MIN, STAR_MAX);
+
+        float rawGap = (clusterW - desiredStar * UPGRADE_COUNT) / (UPGRADE_COUNT - 1);
+        float gap = clamp(rawGap, GAP_MIN, GAP_MAX);
+
+        // Make sure it fits even with chosen gap
+        float maxStarThatFits = (clusterW - gap * (UPGRADE_COUNT - 1)) / UPGRADE_COUNT;
+        float star = Math.min(desiredStar, maxStarThatFits);
+        star = clamp(star, STAR_MIN, STAR_MAX);
+
+        float totalW = star * UPGRADE_COUNT + gap * (UPGRADE_COUNT - 1);
+        float startX = (width - totalW) / 2f;
+
+        // Put stars above the labels area
+        float baseY = height * 0.56f - star * 0.5f;
+
+        // Mouse in WORLD coords (Main already sets aimWorld each frame)
+        float mx = world.getAimWorldX();
+        float my = world.getAimWorldY();
+
+        int hovered = -1;
+
+        // First pass: determine which star is hovered (using base rect for stability)
+        for (int i = 0; i < UPGRADE_COUNT; i++) {
+            float x = startX + i * (star + gap);
+            float y = baseY;
+
+            if (mx >= x && mx <= x + star && my >= y && my <= y + star) {
+                hovered = i;
+                break;
+            }
+        }
+
+        // Hover drives selection visuals
+        selectedUpgradeIndex = hovered;
+
+        // Click selects the hovered upgrade
+        if (hovered != -1 && Gdx.input.isButtonJustPressed(Input.Buttons.LEFT)) {
+            world.chooseUpgrade(hovered);
+            return; // stop drawing extra hover UI this frame if you want
+        }
+
+        // Draw stars (with pulse/lift on hovered)
+        for (int i = 0; i < UPGRADE_COUNT; i++) {
+            float x = startX + i * (star + gap);
+            float y = baseY;
+
+            float pulse = 1f;
+            if (i == selectedUpgradeIndex) {
+                pulse = 1f + (float) Math.sin(uiTime * PULSE_SPEED) * PULSE_AMT;
+                y += SELECT_LIFT;
+            }
+
+            float drawSize = star * pulse;
+            float dx = x + (star - drawSize) * 0.5f;
+            float dy = y + (star - drawSize) * 0.5f;
+
+            Upgrade up = (offered != null && i < offered.length) ? offered[i] : null;
+
+            TextureRegion frame = null;
+            if (up != null) {
+                try {
+                    ArrayList<TextureRegion> anim = up.getAnimation();
+                    if (anim != null && !anim.isEmpty()) {
+                        int idx = Math.max(0, Math.min(cardFrameIndex[i], anim.size() - 1));
+                        frame = anim.get(idx);
+                    }
+                } catch (Throwable ignored) {
+                }
+            }
+
+            if (frame != null) {
+                spriteBatch.draw(frame, dx, dy, drawSize, drawSize);
+            } else {
+                Texture tex = getCardTextureSafe(up);
+                if (tex == null) tex = fallbackCardTexture;
+                spriteBatch.draw(tex, dx, dy, drawSize, drawSize);
+            }
+        }
+
+        if (hovered != -1 && offered != null && hovered < offered.length) {
+            Upgrade up = offered[hovered];
+            if (up != null) {
+                // Tooltip panel near bottom
+                float panelW = width * 0.62f;
+                float panelH = 78f;
+                float panelX = (width - panelW) * 0.5f;
+                float panelY = height * 0.14f;
+
+                // draw a dark panel using the same safe-color restore pattern
+                Color c = spriteBatch.getColor();
+                float r = c.r, g = c.g, b = c.b, a = c.a;
+
+                spriteBatch.setColor(0f, 0f, 0f, 0.65f);
+                spriteBatch.draw(whitePixel, panelX, panelY, panelW, panelH);
+
+                // subtle border
+                spriteBatch.setColor(1f, 1f, 1f, 0.18f);
+                spriteBatch.draw(whitePixel, panelX, panelY + panelH - 2f, panelW, 2f);
+                spriteBatch.draw(whitePixel, panelX, panelY, panelW, 2f);
+                spriteBatch.draw(whitePixel, panelX, panelY, 2f, panelH);
+                spriteBatch.draw(whitePixel, panelX + panelW - 2f, panelY, 2f, panelH);
+
+                spriteBatch.setColor(r, g, b, a);
+
+                // text
+                float textW = panelW - 24f;
+                float cx = panelX + panelW * 0.5f;
+
+                font.setColor(Color.WHITE);
+                font.getData().setScale(1.05f);
+                drawCenteredText(safe(up.name), cx, panelY + panelH - 22f);
+
+                font.getData().setScale(0.85f);
+                font.setColor(new Color(0.9f, 0.9f, 0.9f, 1f));
+                layout.setText(font, safe(up.desc), font.getColor(), textW, Align.center, true);
+                font.draw(spriteBatch, layout, panelX + (panelW - textW) * 0.5f, panelY + 30f);
+
+                font.getData().setScale(1.0f);
+                font.setColor(Color.WHITE);
+            }
+        }
+    }
+
+
+    private static float clamp(float v, float lo, float hi) {
+        return Math.max(lo, Math.min(hi, v));
+    }
+
+    // ----------------------------
+    // Upgrade animation helpers
+    // ----------------------------
+    private void handleUpgradeAnimationResetIfNeeded() {
+        Upgrade[] offered = world.getOfferedUpgrades();
+        int sig = computeOfferedSignature(offered);
+
+        boolean entering = !wasChoosingUpgrade;
+        boolean changed = (sig != lastOfferedSignature);
+
+        if (entering || changed) {
+            resetUpgradeCardAnimations();
+            lastOfferedSignature = sig;
+        }
+    }
+
+    private int computeOfferedSignature(Upgrade[] offered) {
+        int h = 17;
+        if (offered != null) {
+            for (int i = 0; i < UPGRADE_COUNT; i++) {
+                Upgrade u = (i < offered.length) ? offered[i] : null;
+                h = 31 * h + (u == null ? 0 : safe(u.name).hashCode());
+                h = 31 * h + (u == null ? 0 : safe(u.desc).hashCode());
+            }
+        }
+        return h;
+    }
+
+    private void resetUpgradeCardAnimations() {
+        for (int i = 0; i < UPGRADE_COUNT; i++) {
+            cardAnimTimer[i] = 0f;
+            cardFrameIndex[i] = 0;
+            cardAnimFinished[i] = false;
+        }
+    }
+
+    private void updateUpgradeCardAnimations(float delta) {
+        Upgrade[] offered = world.getOfferedUpgrades();
+        if (offered == null) return;
+
+        for (int i = 0; i < UPGRADE_COUNT; i++) {
+            if (cardAnimFinished[i]) continue;
+
+            Upgrade up = (i < offered.length) ? offered[i] : null;
+            if (up == null) {
+                cardAnimFinished[i] = true;
+                continue;
+            }
+
+            ArrayList<TextureRegion> anim = null;
+            try { anim = up.getAnimation(); } catch (Throwable ignored) {}
+
+            if (anim == null || anim.isEmpty()) {
+                cardAnimFinished[i] = true;
+                continue;
+            }
+
+            int lastFrame = anim.size() - 1;
+            if (cardFrameIndex[i] >= lastFrame) {
+                cardFrameIndex[i] = lastFrame;
+                cardAnimFinished[i] = true;
+                continue;
+            }
+
+            cardAnimTimer[i] += delta;
+            while (cardAnimTimer[i] >= CARD_FRAME_TIME && !cardAnimFinished[i]) {
+                cardAnimTimer[i] -= CARD_FRAME_TIME;
+                cardFrameIndex[i]++;
+
+                if (cardFrameIndex[i] >= lastFrame) {
+                    cardFrameIndex[i] = lastFrame; // stop on final frame
+                    cardAnimFinished[i] = true;
+                }
+            }
+        }
     }
 
     // ----------------------------
@@ -157,7 +415,6 @@ public class UserInterface {
         if (room == null) return;
 
         float ts = room.getTileSize();
-
         for (int y = 0; y < room.getRoomHeight(); y++) {
             for (int x = 0; x < room.getRoomWidth(); x++) {
                 spriteBatch.draw(room.getTextureRegion(room.getTile(x, y)), x * ts, y * ts, ts, ts);
@@ -166,27 +423,20 @@ public class UserInterface {
     }
 
     // ----------------------------
-    // World drawing (sprites): enemies + player
+    // World drawing (sprites)
     // ----------------------------
     private void drawSpritesSafe(float delta) {
-        // Enemies first
         for (Enemy e : world.getEnemies()) {
             if (e == null) continue;
-
-            if (e instanceof Zombie) {
-                ((Zombie) e).draw(spriteBatch, delta);
-            }
+            if (e instanceof Zombie) ((Zombie) e).draw(spriteBatch, delta);
         }
 
-        // Player last (so player is drawn over enemies if overlapping)
         Player p = world.getPlayer();
-        if (p != null) {
-            p.draw(spriteBatch, delta);
-        }
+        if (p != null) p.draw(spriteBatch, delta);
     }
 
     // ----------------------------
-    // World drawing (shapes): bullets
+    // World drawing (bullets)
     // ----------------------------
     private void drawBulletsSafe() {
         shapeRenderer.setColor(bulletColor);
@@ -227,77 +477,6 @@ public class UserInterface {
         else selectedUpgradeIndex = -1;
     }
 
-    private void drawUpgradeCards(Upgrade[] offered) {
-        float totalW = CARD_W * UPGRADE_COUNT + CARD_GAP * (UPGRADE_COUNT - 1);
-        float startX = (width - totalW) / 2f;
-        float startY = (height - CARD_H) / 2f - 10f;
-
-        for (int i = 0; i < UPGRADE_COUNT; i++) {
-            float x = startX + i * (CARD_W + CARD_GAP);
-            float y = startY + (i == selectedUpgradeIndex ? SELECT_LIFT : 0f);
-
-            Upgrade up = (offered != null && i < offered.length) ? offered[i] : null;
-            Texture tex = getCardTextureSafe(up);
-            if (tex == null) tex = fallbackCardTexture;
-
-            spriteBatch.draw(tex, x, y, CARD_W, CARD_H);
-
-            font.getData().setScale(0.85f);
-            font.setColor(Color.BLACK);
-            font.draw(spriteBatch, "Press " + (i + 1), x + 14, y + 26);
-            font.getData().setScale(1.0f);
-        }
-
-        font.setColor(Color.WHITE);
-        font.getData().setScale(1.0f);
-    }
-
-    private void drawUpgradeCardTextInWhiteBox(Upgrade[] offered) {
-        if (offered == null || offered.length < UPGRADE_COUNT) return;
-
-        float totalW = CARD_W * UPGRADE_COUNT + CARD_GAP * (UPGRADE_COUNT - 1);
-        float startX = (width - totalW) / 2f;
-        float startY = (height - CARD_H) / 2f - 10f;
-
-        float oldScaleX = font.getData().scaleX;
-        float oldScaleY = font.getData().scaleY;
-        Color oldColor = new Color(font.getColor());
-
-        for (int i = 0; i < UPGRADE_COUNT; i++) {
-            Upgrade up = offered[i];
-            if (up == null) continue;
-
-            float cardX = startX + i * (CARD_W + CARD_GAP);
-            float cardY = startY + (i == selectedUpgradeIndex ? SELECT_LIFT : 0f);
-
-            float boxX = cardX + CARD_W * BOX_X_FRAC;
-            float boxY = cardY + CARD_H * BOX_Y_FRAC;
-            float boxW = CARD_W * BOX_W_FRAC;
-            float boxH = CARD_H * BOX_H_FRAC;
-
-            font.setColor(Color.BLACK);
-            font.getData().setScale(0.95f);
-
-            float titleY = boxY + boxH - 8f;
-            layout.setText(font, safe(up.name), font.getColor(), boxW, Align.center, false);
-            font.draw(spriteBatch, layout, boxX, titleY);
-
-            font.setColor(new Color(0.15f, 0.15f, 0.15f, 1f));
-            font.getData().setScale(0.72f);
-
-            float descTopY = titleY - 18f;
-            layout.setText(font, safe(up.desc), font.getColor(), boxW, Align.center, true);
-
-            float maxDescTop = boxY + boxH - 26f;
-            float clampedDescTop = Math.min(descTopY, maxDescTop);
-
-            font.draw(spriteBatch, layout, boxX, clampedDescTop);
-        }
-
-        font.getData().setScale(oldScaleX, oldScaleY);
-        font.setColor(oldColor);
-    }
-
     // ----------------------------
     // Helpers
     // ----------------------------
@@ -311,11 +490,7 @@ public class UserInterface {
         try {
             return up.getCardTexture();
         } catch (Throwable ignored) {
-            try {
-                return up.cardTexture;
-            } catch (Throwable ignored2) {
-                return null;
-            }
+            try { return up.cardTexture; } catch (Throwable ignored2) { return null; }
         }
     }
 
@@ -407,6 +582,7 @@ public class UserInterface {
 
     public void dispose() {
         fallbackCardTexture.dispose();
+        whitePixel.dispose();
         font.dispose();
 
         uiBarBg.dispose();

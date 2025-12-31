@@ -4,9 +4,11 @@ import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Input;
 import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
+import com.badlogic.gdx.graphics.g2d.TextureRegion;
 import com.badlogic.gdx.math.Vector2;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.Random;
@@ -90,6 +92,17 @@ public class GameWorld {
      */
     private final IdentityHashMap<AttackHitbox, Boolean> hitboxShakeUsed = new IdentityHashMap<>();
 
+    //Upgrade Animation Storage
+    private Texture healthUpgradeSheet = new Texture("ui/healthUpgrade.png");
+    private Texture damageUpgradeSheet = new Texture("ui/damageUpgrade.png");
+    private Texture fireRateUpgradeSheet = new Texture("ui/fireRateUpgrade.png");
+    private Texture movementUpgradeSheet = new Texture("ui/movementUpgrade.png");
+
+    ArrayList<TextureRegion> healthUpgrade;
+    ArrayList<TextureRegion> damageUpgrade;
+    ArrayList<TextureRegion> fireRateUpgrade;
+    ArrayList<TextureRegion> movementUpgrade;
+
     // -------------------- Screen shake callback --------------------
     public interface ScreenShake {
         void addShake(float intensity, float duration);
@@ -112,6 +125,57 @@ public class GameWorld {
         this.player = player;
         this.spriteBatch = spriteBatch;
         restart();
+
+        healthUpgrade = new ArrayList<>();
+        damageUpgrade = new ArrayList<>();
+        fireRateUpgrade = new ArrayList<>();
+        movementUpgrade = new ArrayList<>();
+
+        //Initializing the texture regions for upgrade animations
+        Collections.addAll(healthUpgrade,
+            new TextureRegion(healthUpgradeSheet, 0, 0, 64, 64),
+            new TextureRegion(healthUpgradeSheet, 64, 0, 64, 64),
+            new TextureRegion(healthUpgradeSheet, 128, 0, 64, 64),
+            new TextureRegion(healthUpgradeSheet, 196, 0, 64, 64),
+            new TextureRegion(healthUpgradeSheet, 256, 0, 64, 64),
+            new TextureRegion(healthUpgradeSheet, 320, 0, 64, 64),
+            new TextureRegion(healthUpgradeSheet, 384, 0, 64, 64),
+            new TextureRegion(healthUpgradeSheet, 448, 0, 64, 64),
+            new TextureRegion(healthUpgradeSheet, 512, 0, 64, 64),
+            new TextureRegion(healthUpgradeSheet, 576, 0, 64, 64));
+        Collections.addAll(damageUpgrade,
+            new TextureRegion(damageUpgradeSheet, 0, 0, 64, 64),
+            new TextureRegion(damageUpgradeSheet, 64, 0, 64, 64),
+            new TextureRegion(damageUpgradeSheet, 128, 0, 64, 64),
+            new TextureRegion(damageUpgradeSheet, 196, 0, 64, 64),
+            new TextureRegion(damageUpgradeSheet, 256, 0, 64, 64),
+            new TextureRegion(damageUpgradeSheet, 320, 0, 64, 64),
+            new TextureRegion(damageUpgradeSheet, 384, 0, 64, 64),
+            new TextureRegion(damageUpgradeSheet, 448, 0, 64, 64),
+            new TextureRegion(damageUpgradeSheet, 512, 0, 64, 64),
+            new TextureRegion(damageUpgradeSheet, 576, 0, 64, 64));
+        Collections.addAll(fireRateUpgrade,
+            new TextureRegion(fireRateUpgradeSheet, 0, 0, 64, 64),
+            new TextureRegion(fireRateUpgradeSheet, 64, 0, 64, 64),
+            new TextureRegion(fireRateUpgradeSheet, 128, 0, 64, 64),
+            new TextureRegion(fireRateUpgradeSheet, 196, 0, 64, 64),
+            new TextureRegion(fireRateUpgradeSheet, 256, 0, 64, 64),
+            new TextureRegion(fireRateUpgradeSheet, 320, 0, 64, 64),
+            new TextureRegion(fireRateUpgradeSheet, 384, 0, 64, 64),
+            new TextureRegion(fireRateUpgradeSheet, 448, 0, 64, 64),
+            new TextureRegion(fireRateUpgradeSheet, 512, 0, 64, 64),
+            new TextureRegion(fireRateUpgradeSheet, 576, 0, 64, 64));
+        Collections.addAll(movementUpgrade,
+            new TextureRegion(movementUpgradeSheet, 0, 0, 64, 64),
+            new TextureRegion(movementUpgradeSheet, 64, 0, 64, 64),
+            new TextureRegion(movementUpgradeSheet, 128, 0, 64, 64),
+            new TextureRegion(movementUpgradeSheet, 196, 0, 64, 64),
+            new TextureRegion(movementUpgradeSheet, 256, 0, 64, 64),
+            new TextureRegion(movementUpgradeSheet, 320, 0, 64, 64),
+            new TextureRegion(movementUpgradeSheet, 384, 0, 64, 64),
+            new TextureRegion(movementUpgradeSheet, 448, 0, 64, 64),
+            new TextureRegion(movementUpgradeSheet, 512, 0, 64, 64),
+            new TextureRegion(movementUpgradeSheet, 576, 0, 64, 64));
     }
 
     // -------------------- Getters --------------------
@@ -161,8 +225,11 @@ public class GameWorld {
 
         // Pause world while choosing upgrades
         if (choosingUpgrade) {
+            if (player != null) player.setAnimationPaused(true);
             handleUpgradeInput();
             return;
+        } else {
+            if (player != null) player.setAnimationPaused(false);
         }
 
         // Safety
@@ -194,6 +261,7 @@ public class GameWorld {
             if (weapon.isOnCooldown()) {
                 player.startDash(aimDir.x, aimDir.y);
                 weapon.startAttack(delta);
+                audio.playSwordHit();
 
                 player.startAttackLock(0.25f);
                 performMeleeAttack(getAimWorld());
@@ -474,10 +542,8 @@ public class GameWorld {
     }
 
     private void handleUpgradeInput() {
-        if (Gdx.input.isKeyJustPressed(Input.Keys.NUM_1)) applyUpgrade(offeredUpgrades[0]);
-        if (Gdx.input.isKeyJustPressed(Input.Keys.NUM_2)) applyUpgrade(offeredUpgrades[1]);
-        if (Gdx.input.isKeyJustPressed(Input.Keys.NUM_3)) applyUpgrade(offeredUpgrades[2]);
     }
+
 
     private void generateOfferedUpgrades() {
         offeredUpgrades[0] = randomUpgrade();
@@ -492,12 +558,11 @@ public class GameWorld {
     }
 
     private Upgrade randomUpgrade() {
-        int r = rng.nextInt(5);
-        if (r == 0) return new Upgrade("Rapid Fire", "Fire rate +20%", cardTexture);
-        if (r == 1) return new Upgrade("Runner", "Move speed +15%", cardTexture);
-        if (r == 2) return new Upgrade("Vitality", "Max HP +1 and heal 1", cardTexture);
-        if (r == 3) return new Upgrade("Extra Damage", "Bullet damage +1", cardTexture);
-        return new Upgrade("Projectile Speed", "Bullet speed +20%", cardTexture);
+        int r = rng.nextInt(4);
+        if (r == 0) return new Upgrade("Rapid Fire", "Fire rate +20%", fireRateUpgrade);
+        if (r == 1) return new Upgrade("Runner", "Move speed +15%", movementUpgrade);
+        if (r == 2) return new Upgrade("Vitality", "Max HP +1 and heal 1", healthUpgrade);
+        return new Upgrade("Extra Damage", "Bullet damage +1", damageUpgrade);
     }
 
     private void applyUpgrade(Upgrade u) {
@@ -614,6 +679,14 @@ public class GameWorld {
             player.setFacing(dir.y > 0 ? Player.Facing.UP : Player.Facing.DOWN);
         }
     }
+
+    public void chooseUpgrade(int index) {
+        if (!choosingUpgrade) return;
+        if (index < 0 || index >= offeredUpgrades.length) return;
+
+        applyUpgrade(offeredUpgrades[index]); // uses your existing private method
+    }
+
 
     public void dispose() {
         cardTexture.dispose();
