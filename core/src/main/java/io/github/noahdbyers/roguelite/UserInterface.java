@@ -98,7 +98,7 @@ public class UserInterface {
         Player p = world.getPlayer();
         if (w != null && p != null) {
             tmpMouseWorld.set(world.getAimWorldX(), world.getAimWorldY());
-            w.draw(spriteBatch, delta, tmpIgnored, p, tmpMouseWorld);
+            w.draw(spriteBatch, delta, p, tmpMouseWorld);
         }
 
         spriteBatch.end();

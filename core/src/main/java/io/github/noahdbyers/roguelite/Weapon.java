@@ -25,6 +25,11 @@ public class Weapon {
     private float drawY;
     private int damage;
 
+    //Combo tracking
+    private int combo = 0;
+    private int maxCombo = 2;
+    private float comboWindow = 0.05f;
+
 
     Weapon(String name, float attackCooldownTime, float width, float height, int damage, TextureRegion weaponTexture, ArrayList<TextureRegion> frames) {
         this.name = name;
@@ -36,7 +41,7 @@ public class Weapon {
         this.damage = damage;
     }
 
-    public void draw(SpriteBatch spriteBatch, float delta, Vector2 drawLocationIgnored, Player player, Vector2 mouseWorld) {
+    public void draw(SpriteBatch spriteBatch, float delta, Player player, Vector2 mouseWorld) {
         if (!animate) return;
 
         // --- Advance animation ---
@@ -113,10 +118,30 @@ public class Weapon {
         );
     }
 
-    public void startAttack() {
-        animate = true;
-        animTimer = 0f;
-        storedFrame = 0;
+    public void startAttack(float delta) {
+        if(combo < maxCombo && delta < comboWindow) {
+            combo++;
+            animate = true;
+            animTimer = 0f;
+            storedFrame = 0;
+        }
+        else {
+            animate = true;
+            animTimer = 0f;
+            storedFrame = 0;
+            attackCooldown = attackCooldownTime;
+            combo = 0;
+        }
+
+    }
+
+    public void updateTimers(float delta) {
+        if (attackCooldown > 0) {
+            attackCooldown -= delta;
+        }
+        else {
+            attackCooldown = 0;
+        }
     }
     public float getAttackCooldown() {
         return attackCooldown;
@@ -150,61 +175,8 @@ public class Weapon {
         this.damage = damage;
     }
 
-    public Vector2 getDrawCoords(Vector2 mouseWorld, Player player) {
-        float px;
-        float py = player.getY() + 35f;
-
-        // --- Player center (anchor point) ---
-        if(mouseWorld.y > player.getY()) {
-            px = player.getX() + 5f;
-        }
-        else {
-            px = player.getX() + 25f;
-        }
-
-        if(mouseWorld.x > player.getX()) {
-            py = player.getY() + 35;
-        }
-        else {
-            py = player.getY() + 5;
-        }
-
-        // --- Aim direction (player -> mouse) ---
-        float dirX = mouseWorld.x - px;
-        float dirY = mouseWorld.y - py;
-        float len = (float) Math.sqrt(dirX * dirX + dirY * dirY);
-
-        // Avoid NaNs when mouse is exactly on player
-        if (len < 0.0001f) {
-            dirX = 1f;
-            dirY = 0f;
-            len = 1f;
-        }
-        dirX /= len;
-        dirY /= len;
-
-        // --- Smear handle pivot in sprite space ---
-        // You said the handle is at (16,16) in the sprite.
-        float originX = 16f;
-        float originY = 16f;
-
-        // --- Where the HANDLE should be in world space ---
-        // This is the "spawn point" for the smear, NOT the center of the sprite.
-        float offset = 16f; // increase to push farther from player
-        float handleX = px + dirX * offset;
-        float handleY = py + dirY * offset;
-
-        // --- Rotation: aim direction ---
-        // If your smear art points "up" by default, you may need -90f.
-        // If it points "right" by default, use 0f.
-        float angleDeg = (float) Math.toDegrees(Math.atan2(dirY, dirX)) - 90f;
-
-        // --- Draw position so that origin lands exactly on the handle point ---
-        drawX = handleX - originX;
-        drawY = handleY - originY;
-
-        Vector2 drawCoords = new Vector2(drawX, drawY);
-        return drawCoords;
+    public boolean isOnCooldown() {
+        return attackCooldown <= 0;
     }
 
     public int getDamage() {

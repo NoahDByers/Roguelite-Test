@@ -133,6 +133,7 @@ public class GameWorld {
         // Update player
         player.update(room, room.getTileSize());
         player.updateTimers(delta);
+        weapon.updateTimers(delta);
 
         // Update enemies
         for (Enemy e : enemies) {
@@ -149,15 +150,16 @@ public class GameWorld {
             Vector2 aimDir = getAimDirection(); // mouseWorld - playerCenter
             facePlayerToward(aimDir);
 
-            player.startDash(aimDir.x, aimDir.y);
+            if(weapon.isOnCooldown()) {
+                player.startDash(aimDir.x, aimDir.y);
+                weapon.startAttack(delta);
 
-            weapon.startAttack();
 
-            // Lock facing during attack animation
-            player.startAttackLock(0.25f);
-
-            performMeleeAttack(getAimWorld());
-            audio.playSwordHit();
+                // Lock facing during attack animation
+                player.startAttackLock(0.25f);
+                performMeleeAttack(getAimWorld());
+                audio.playSwordHit();
+            }
         }
 
         // Update damage popups
