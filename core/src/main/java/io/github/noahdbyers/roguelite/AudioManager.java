@@ -3,11 +3,17 @@ package io.github.noahdbyers.roguelite;
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.audio.Music;
 import com.badlogic.gdx.audio.Sound;
+import com.badlogic.gdx.math.MathUtils;
+
+import java.util.ArrayList;
+import java.util.Collections;
 
 public class AudioManager {
     private Sound sfxShoot;
     private Sound sfxHit;
     private Sound sfxUIClick;
+    private ArrayList<Sound> swordSwingMiss = new ArrayList<>();
+    private ArrayList<Sound> swordSwingHit = new ArrayList<>();
 
     private Music musicMain;
     private Music musicCemetery;
@@ -29,9 +35,29 @@ public class AudioManager {
         musicCemetery = Gdx.audio.newMusic(Gdx.files.internal("audio/music/cemetery_pcm.wav"));
         musicCemetery.setLooping(true);
         musicCemetery.setVolume(muted ? 0f : musicVolume);
+
+        Collections.addAll(swordSwingMiss,
+            Gdx.audio.newSound(Gdx.files.internal("audio/sfx/combatSFX/sword_miss_1_pcm.wav")),
+            Gdx.audio.newSound(Gdx.files.internal("audio/sfx/combatSFX/sword_miss_2_pcm.wav")),
+            Gdx.audio.newSound(Gdx.files.internal("audio/sfx/combatSFX/sword_miss_3_pcm.wav"))
+        );
+
+        Collections.addAll(swordSwingHit,
+            Gdx.audio.newSound(Gdx.files.internal("audio/sfx/combatSFX/sword_hit_1_pcm.wav")),
+            Gdx.audio.newSound(Gdx.files.internal("audio/sfx/combatSFX/sword_hit_2_pcm.wav")),
+            Gdx.audio.newSound(Gdx.files.internal("audio/sfx/combatSFX/sword_hit_3_pcm.wav"))
+        );
     }
 
     // ---- Play helpers ----
+    public void playSwordMiss() {
+        int value = MathUtils.random(0, 2);
+        playSfx(swordSwingMiss.get(value));
+    }
+    public void playSwordHit() {
+        int value = MathUtils.random(0,2);
+        playSfx(swordSwingHit.get(value));
+    }
     public void playShoot()   { playSfx(sfxShoot); }
     public void playHit()     { playSfx(sfxHit); }
     public void playUIClick() { playSfx(sfxUIClick); }
@@ -77,6 +103,9 @@ public class AudioManager {
         if (sfxUIClick != null) sfxUIClick.dispose();
         if (musicMain != null) musicMain.dispose();
         if (musicCemetery != null)  { musicCemetery.stop();  musicCemetery.dispose();  musicCemetery = null; }
+        for (Sound e : swordSwingMiss) {
+            e.dispose();
+        }
 
         System.out.println("Audio dispose called");
     }

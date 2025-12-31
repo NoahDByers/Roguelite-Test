@@ -11,21 +11,60 @@ public class Enemy extends Entity {
 
     // Direction the enemy is currently facing
     private Facing facing = Facing.DOWN;
+
     // Flash effect
     private float hitFlashTimer = 0f;
     private static final float HIT_FLASH_DURATION = 0.1f;
 
+    // ----------------------------
+    // Knockback
+    // ----------------------------
+    private float knockVX = 0f;
+    private float knockVY = 0f;
+    private float knockTimer = 0f;
+
+    // How long knockback influence lasts (seconds)
+    private static final float KNOCK_DURATION = 0.12f;
+
+    // Exponential-ish damping so knockback eases out
+    private static final float KNOCK_DAMPING = 14f; // higher = faster stop
 
     public Enemy(float x, float y, float speed, float width, float height, int health) {
         super(x, y, speed, width, height);
         this.health = health;
     }
 
+    /**
+     * Apply knockback in the given direction.
+     *
+     * @param dirX direction x (doesn't need to be normalized)
+     * @param dirY direction y (doesn't need to be normalized)
+     * @param strength knockback speed magnitude (world units per second)
+     */
+    public void takeKnockback(float dirX, float dirY, float strength) {
+        float len2 = dirX * dirX + dirY * dirY;
+        if (len2 < 0.0001f) return;
+
+        float invLen = (float)(1.0 / Math.sqrt(len2));
+        dirX *= invLen;
+        dirY *= invLen;
+
+        // Additive knockback (lets multiple hits "stack" a bit)
+        knockVX += dirX * strength;
+        knockVY += dirY * strength;
+
+        // Refresh timer
+        knockTimer = KNOCK_DURATION;
+    }
+
     public void update(Player player, Room room, int tileSize) {
         float delta = Gdx.graphics.getDeltaTime();
         if (player == null || room == null) return;
 
-        // Move toward player's center (reduces corner jitter)
+        // 1) Apply knockback movement first (with collision), then damp it
+        applyKnockback(room, tileSize, delta);
+
+        // 2) Normal movement toward player
         float px = player.getX() + player.getWidth() * 0.5f;
         float py = player.getY() + player.getHeight() * 0.5f;
         float ex = getX() + getWidth() * 0.5f;
@@ -63,7 +102,41 @@ public class Enemy extends Entity {
         updateFacing(moveX, moveY);
 
         if (hitFlashTimer > 0f) {
-            hitFlashTimer -= Gdx.graphics.getDeltaTime();
+            hitFlashTimer -= delta;
+        }
+    }
+
+    private void applyKnockback(Room room, int tileSize, float delta) {
+        if (knockTimer <= 0f) return;
+
+        float oldX = getX();
+        float oldY = getY();
+
+        // X axis
+        setX(oldX + knockVX * delta);
+        if (collidesWithRoom(room, tileSize)) {
+            setX(oldX);
+            knockVX = 0f;
+        }
+
+        // Y axis
+        setY(oldY + knockVY * delta);
+        if (collidesWithRoom(room, tileSize)) {
+            setY(oldY);
+            knockVY = 0f;
+        }
+
+        // Damping + timer
+        knockTimer -= delta;
+        if (knockTimer <= 0f) {
+            knockTimer = 0f;
+            knockVX = 0f;
+            knockVY = 0f;
+        } else {
+            // Smoothly decay velocity while timer is active
+            float damp = (float)Math.exp(-KNOCK_DAMPING * delta);
+            knockVX *= damp;
+            knockVY *= damp;
         }
     }
 
@@ -81,19 +154,16 @@ public class Enemy extends Entity {
         }
     }
 
-    public Facing getFacing() {
-        return facing;
-    }
+    public Facing getFacing() { return facing; }
 
     public void takeDamage(int amount) {
         health -= amount;
         hitFlashTimer = HIT_FLASH_DURATION;
     }
 
+    public boolean isDead() { return health <= 0; }
 
-    public boolean isDead() {
-        return health <= 0;
-    }
+    public boolean isFlashing() { return hitFlashTimer > 0f; }
 
     /**
      * Bounds-safe tile collision check.
@@ -111,7 +181,8 @@ public class Enemy extends Entity {
 
         for (int y = bottomTile; y <= topTile; y++) {
             for (int x = leftTile; x <= rightTile; x++) {
-                if (grid[y][x] == 1 || grid[y][x] == 2 || grid[y][x] == 3 || grid[y][x] == 4 || grid[y][x] == 5) return true;
+                int t = grid[y][x];
+                if (t == 1 || t == 2 || t == 3 || t == 4 || t == 5) return true;
             }
         }
         return false;
@@ -146,10 +217,6 @@ public class Enemy extends Entity {
         }
     }
 
-    public boolean isFlashing() {
-        return hitFlashTimer > 0f;
-    }
-
+    // Kept to avoid breaking callers
     public void update() {}
 }
-
