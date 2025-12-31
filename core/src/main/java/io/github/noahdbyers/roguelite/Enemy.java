@@ -48,11 +48,12 @@ public class Enemy extends Entity {
         return health <= 0;
     }
 
+
     public boolean collidesWithRoom(int[][] room, int tileSize) {
         int leftTile = (int)(getX() / tileSize);
-        int rightTile = (int)((getX() + getWidth()) / tileSize);
+        int rightTile = (int)((getX() + getWidth() - 1) / tileSize);
         int bottomTile = (int)(getY() / tileSize);
-        int topTile = (int)((getY() + getHeight()) / tileSize);
+        int topTile = (int)((getY() + getHeight() - 1) / tileSize);
 
         for (int a = bottomTile; a <= topTile; a++) {
             for(int b = leftTile; b <= rightTile; b++) {

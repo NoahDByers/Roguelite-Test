@@ -100,6 +100,9 @@ public class UserInterface {
 
         if (!world.isChoosingUpgrade()) {
             drawHud();
+            for (EnemyDrop d : world.getDrops()) {
+                d.draw(spriteBatch);
+            }
         }
 
         if (world.isChoosingUpgrade()) {
@@ -121,6 +124,7 @@ public class UserInterface {
             drawCenteredText("GAME OVER - Press R to Restart", width / 2f, height / 2f + 10);
             font.getData().setScale(1.0f);
         }
+
 
         spriteBatch.end();
     }

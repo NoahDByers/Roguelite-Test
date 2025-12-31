@@ -23,6 +23,8 @@ public class GameWorld {
     private Player player;
     private final ArrayList<Enemy> enemies = new ArrayList<>();
     private final ArrayList<Bullet> bullets = new ArrayList<>();
+    private final ArrayList<EnemyDrop> drops = new ArrayList<>();
+
 
     // Run stats / progression
     private boolean gameOver = false;
@@ -82,6 +84,10 @@ public class GameWorld {
 
     /** UI should read these to display the 3 choices currently being offered. */
     public Upgrade[] getOfferedUpgrades() { return offeredUpgrades; }
+    public ArrayList<EnemyDrop> getDrops() {
+        return drops;
+    }
+
 
     // -------------------- Update loop --------------------
     public void update(float delta) {
@@ -142,6 +148,16 @@ public class GameWorld {
 
         // If you want “spawn over time” inside waves, you can call:
         // updateSpawning(delta);
+        for (int i = drops.size() - 1; i >= 0; i--) {
+            EnemyDrop d = drops.get(i);
+            d.update(delta);
+
+            if (d.getBounds().overlaps(player.getBounds())) {
+                d.apply(player, this);
+                drops.remove(i);
+            }
+        }
+
     }
 
     // -------------------- Restart --------------------
@@ -336,6 +352,7 @@ public class GameWorld {
                     hitEnemy = true;
 
                     if (enemy.isDead()) {
+                        spawnDrops(enemy);
                         enemies.remove(e);
                         enemiesKilled++;
                     }
@@ -346,6 +363,26 @@ public class GameWorld {
             if (hitEnemy) {
                 bullets.remove(i);
             }
+        }
+    }
+
+    private void spawnDrops(Enemy enemy) {
+        float x = enemy.getX();
+        float y = enemy.getY();
+
+        // Coin drop (common)
+        if (Math.random() < 0.8) {
+            drops.add(new EnemyDrop(x, y, DropType.COIN, 1));
+        }
+
+        // Soul drop (uncommon)
+        if (Math.random() < 0.35) {
+            drops.add(new EnemyDrop(x, y, DropType.SOUL, 1));
+        }
+
+        // Health drop (rare)
+        if (Math.random() < 0.15) {
+            drops.add(new EnemyDrop(x, y, DropType.HEALTH, 1));
         }
     }
 
@@ -533,4 +570,6 @@ public class GameWorld {
 
     public int getCoins() { return coins; }
     public int getSouls() { return souls; }
+    public void addSouls(int souls) {this.souls += souls;}
+    public void addCoins(int coins) {this.coins += coins;}
 }

@@ -1,9 +1,14 @@
 package io.github.noahdbyers.roguelite;
 
 import com.badlogic.gdx.Gdx;
+import com.badlogic.gdx.Input;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
+import com.badlogic.gdx.math.Rectangle;
 
 public class Player extends Entity {
+    private Rectangle bounds;
+    private Object Input;
+
     public enum Facing { UP, DOWN, LEFT, RIGHT }
     private Facing facing = Facing.DOWN;
     private int maxHealth = 5;
@@ -16,15 +21,18 @@ public class Player extends Entity {
     private float invulnDuration = 0.5f; //invincibility timer after being hit
     Player(float x, float y, float speed, float width, float height) {
         super(x, y, speed, width, height);
+        bounds = new Rectangle(x, y, width, height);
     }
-
+    public Rectangle getBounds() {
+        return bounds;
+    }
     //Input Handling Methods
+
 
     //This is a method to handle basic WASD movement
     public void update(Room room, int tileSize) {
 
         float delta = Gdx.graphics.getDeltaTime();
-
         float moveX = 0;
         float moveY = 0;
 
@@ -45,18 +53,21 @@ public class Player extends Entity {
             facing = Facing.UP;
         }
 
-        //Move X axis
+        // X axis
         setX(getX() + moveX);
         if (collidesWithRoom(room.getRoom(), tileSize)) {
             setX(getX() - moveX);
         }
 
-        //Move Y axis
+        // Y axis
         setY(getY() + moveY);
         if (collidesWithRoom(room.getRoom(), tileSize)) {
             setY(getY() - moveY);
         }
+
+        bounds.set(getX(), getY(), getWidth(), getHeight());
     }
+
 
     public void update() {}
 
@@ -101,9 +112,9 @@ public class Player extends Entity {
 
     public boolean collidesWithRoom(int[][] room, int tileSize) {
         int leftTile = (int)(getX() / tileSize);
-        int rightTile = (int)((getX() + getWidth()) / tileSize);
+        int rightTile = (int)((getX() + getWidth() - 1) / tileSize);
         int bottomTile = (int)(getY() / tileSize);
-        int topTile = (int)((getY() + getHeight()) / tileSize);
+        int topTile = (int)((getY() + getHeight() - 1) / tileSize);
 
         for (int a = bottomTile; a <= topTile; a++) {
             for(int b = leftTile; b <= rightTile; b++) {
