@@ -93,10 +93,15 @@ public class UserInterface {
             p.draw(spriteBatch, Gdx.graphics.getDeltaTime());
         }
 
-        // ✅ draw the weapon/book after player (so it appears on top)
-        drawWeaponBook();
-
+        world.getWeapon().draw(spriteBatch, delta, world.getAttackPosition(), world.getPlayer(), world.getAimWorld());
         spriteBatch.end();
+
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
+        shapeRenderer.setColor(0f, 1f, 1f, 0.35f);
+        for (AttackHitbox hb : world.getMeleeHitboxes()) {
+            shapeRenderer.rect(hb.rect.x, hb.rect.y, hb.rect.width, hb.rect.height);
+        }
+        shapeRenderer.end();
 
         // ----------------------------
         // 2) WORLD (ShapeRenderer): bullets (and any debug shapes)
@@ -381,41 +386,6 @@ public class UserInterface {
         float iconSize = 65;
         spriteBatch.draw(icon, x + 5, y - iconSize + 3, iconSize + 100, iconSize);
         font.draw(spriteBatch, value, x + iconSize - 10, y - iconSize / 2 + 8);
-    }
-
-    private void drawWeaponBook() {
-        if (world == null) return;
-
-        Weapon w = world.getWeapon();
-        Player p = world.getPlayer();
-        if (w == null || p == null) return;
-
-        TextureRegion book = w.getWeaponTexture();
-        if (book == null) return;
-
-        float[] pos = world.getBookWorldPos(32f); // distance from player
-        float bx = pos[0];
-        float by = pos[1];
-
-        // Draw size (world units). Tweak to taste.
-        float drawW = 24f;
-        float drawH = 24f;
-
-        // Center the sprite on the spawn point
-        float x = bx - drawW / 2f;
-        float y = by - drawH / 2f;
-
-        // Optional rotation so it “faces” aim direction
-        float angle = world.getAimAngleDeg();
-
-        spriteBatch.draw(
-            book,
-            x, y,
-            drawW / 2f, drawH / 2f,   // origin for rotation (center)
-            drawW, drawH,
-            1f, 1f,
-            angle
-        );
     }
 
     private void drawDamagePopups() {

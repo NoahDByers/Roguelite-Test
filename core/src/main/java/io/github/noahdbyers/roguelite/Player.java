@@ -16,8 +16,21 @@ public class Player extends Entity {
     private Facing facing = Facing.DOWN;
     private Facing lastFacing = Facing.DOWN;
 
+    //Movement
     private boolean isMoving = false;
     private boolean lastMoving = false;
+
+    /* Dash Config */
+    private float dashSpeed = 650f;
+    private float dashDuration = 0.08f;
+    private float dashCooldownTime = 0.25f;
+
+    /* Dash Runtime */
+    private float dashTimer = 0f;
+    private float dashCooldown = 0f;
+    private float dashVX = 0f, dashVY = 0f;
+
+    public boolean isDashing() { return dashTimer > 0f; }
 
     // Animation
     private static final float IDLE_FRAME_TIME = 0.25f; // slower idle
@@ -82,6 +95,24 @@ public class Player extends Entity {
 
     public void update(Room room, int tileSize) {
         float delta = Gdx.graphics.getDeltaTime();
+
+        if (isDashing()) {
+            float oldX = getX();
+            float oldY = getY();
+
+            //moveX
+            setX(oldX + dashVX * delta);
+            if (collidesWithRoom(room.getRoom(), tileSize, room.getRoomWidth(),
+                room.getRoomHeight())) setX(oldX);
+
+            //moveY
+            setY(oldY + dashVY * delta);
+            if (collidesWithRoom(room.getRoom(), tileSize, room.getRoomWidth(),
+                room.getRoomHeight())) setY(oldY);
+
+            clampToScreen();
+            return; //Exits the update function, skipping normal movement while dashing
+        }
 
         float moveX = 0f;
         float moveY = 0f;
@@ -185,6 +216,9 @@ public class Player extends Entity {
             invulnTimer -= delta;
             if (invulnTimer < 0f) invulnTimer = 0f;
         }
+
+        if (dashCooldown > 0f) dashCooldown -= delta;
+        if (dashTimer > 0f) dashTimer -= delta;
     }
 
     public boolean isInvulnerable() { return invulnTimer > 0f; }
@@ -235,6 +269,24 @@ public class Player extends Entity {
 
     private static int clamp(int v, int lo, int hi) {
         return Math.max(lo, Math.min(hi, v));
+    }
+
+    public void setFacing(Facing facing) {
+        this.facing = facing;
+    }
+
+    public void startDash(float dirX, float dirY) {
+        if (dashCooldown > 0f || isDashing()) return;
+
+        float len = (float)Math.sqrt(dirX*dirX + dirY*dirY);
+        if (len == 0f) return;
+        dirX /= len; dirY /= len;
+
+        dashVX = dirX * dashSpeed;
+        dashVY = dirY * dashSpeed;
+
+        dashTimer = dashDuration;
+        dashCooldown = dashCooldownTime;
     }
 
     public void dispose() {
