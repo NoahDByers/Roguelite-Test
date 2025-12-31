@@ -4,6 +4,7 @@ import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Input;
 import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
+import com.badlogic.gdx.math.Vector2;
 
 import java.util.ArrayList;
 import java.util.Random;
@@ -57,6 +58,8 @@ public class GameWorld {
 
     private final Texture cardTexture = new Texture("ui/upgrade_card.png");
     private final Random rng = new Random();
+    private final ArrayList<AttackHitbox> meleeHitboxes = new ArrayList<>();
+
 
     private AudioManager audio;
     public GameWorld(Room room, Player player, SpriteBatch spriteBatch) {
@@ -80,6 +83,13 @@ public class GameWorld {
 
     public Upgrade[] getOfferedUpgrades() { return offeredUpgrades; }
     public ArrayList<DamagePopup> getDamagePopups() { return damagePopups; }
+    public float getAimWorldX() { return aimWorldX; }
+    public float getAimWorldY() { return aimWorldY; }
+
+    public ArrayList<AttackHitbox> getMeleeHitboxes() {
+        return meleeHitboxes;
+    }
+
     public void setWeapon(Weapon weapon) {
         this.weapon = weapon;
         if (this.weapon != null) this.weapon.setAttackCooldown(0f);
@@ -121,9 +131,18 @@ public class GameWorld {
 
         // Combat
         handlePlayerEnemyContact();
-        tryShootTowardsCursor(delta); // ✅ cursor aim
-        updateBullets();
+        updateMeleeHitboxes(delta);
 
+        if (Gdx.input.isButtonJustPressed(Input.Buttons.LEFT)) {
+            Vector2 aimDir = getAimDirection(); //mouseWorld - playerCenter
+            facePlayerToward(aimDir);
+
+            player.startDash(aimDir.x, aimDir.y);
+            Vector2 aimLocation = new Vector2(aimWorldX, aimWorldY);
+
+            weapon.startAttack();
+            performMeleeAttack(getAimWorld());
+        }
         for (int i = damagePopups.size() - 1; i >= 0; i--) {
             DamagePopup p = damagePopups.get(i);
             p.update(delta);
@@ -201,7 +220,7 @@ public class GameWorld {
     private void startWave() {
         enemies.clear();
 
-        int toSpawn = 10 + wave;
+        int toSpawn = 1;
         float baseSpeed = 60f + wave * 8f;
 
         for (int i = 0; i < toSpawn; i++) {
@@ -255,115 +274,6 @@ public class GameWorld {
     }
 
     // -------------------- Combat (Cursor Aim) --------------------
-    private void tryShootTowardsCursor(float delta) {
-        if (weapon == null || player == null || room == null) return;
-
-        weapon.setAttackCooldown(weapon.getAttackCooldown() - delta);
-        if (weapon.getAttackCooldown() > 0f) return;
-
-        float[] book = getBookWorldPos(32f); // distance from player
-        float sx = book[0];
-        float sy = book[1];
-
-        float dirX = aimWorldX - sx;
-        float dirY = aimWorldY - sy;
-
-        bullets.add(new Bullet(sx, sy, dirX, dirY, bulletSpeed, bulletSize));
-
-        weapon.setAttackCooldown(weapon.getAttackCooldownTime());
-    }
-
-
-    private float[] getBookSpawnPointTowardsCursor(Player p, Room room, float distance) {
-        // Player center
-        float cx = p.getX() + p.getWidth() / 2f;
-        float cy = p.getY() + p.getHeight() / 2f;
-
-        // Mouse in WORLD coords
-        float mx = room.mouseToWorldX();
-        float my = room.mouseToWorldY();
-
-        // Aim vector
-        float dx = mx - cx;
-        float dy = my - cy;
-
-        float len = (float)Math.sqrt(dx * dx + dy * dy);
-        if (len == 0f) {
-            // fallback if mouse is exactly on player
-            return new float[]{cx, cy};
-        }
-
-        dx /= len;
-        dy /= len;
-
-        // Book sits distance units away from the player center
-        float sx = cx + dx * distance;
-        float sy = cy + dy * distance;
-
-        return new float[]{sx, sy};
-    }
-
-
-    private void updateBullets() {
-        if (room == null) return;
-
-        int[][] grid = room.getRoom();
-        int tileSize = room.getTileSize();
-
-        for (int i = bullets.size() - 1; i >= 0; i--) {
-            Bullet b = bullets.get(i);
-            if (b == null) {
-                bullets.remove(i);
-                continue;
-            }
-
-            b.update();
-
-            if (b.collidesWithRoom(grid, tileSize)) {
-                bullets.remove(i);
-                continue;
-            }
-
-            if (b.isOffScreen()) {
-                bullets.remove(i);
-                continue;
-            }
-
-            boolean hitEnemy = false;
-            for (int e = enemies.size() - 1; e >= 0; e--) {
-                Enemy enemy = enemies.get(e);
-                if (enemy == null) {
-                    enemies.remove(e);
-                    continue;
-                }
-
-                if (overlaps(b.getX(), b.getY(), b.getWidth(), b.getHeight(),
-                    enemy.getX(), enemy.getY(), enemy.getWidth(), enemy.getHeight())) {
-
-                    enemy.takeDamage(bulletDamage);
-                    if (audio != null) audio.playHit();
-                    enemy.takeDamage(bulletDamage);
-
-                    // add popup at enemy top
-                    damagePopups.add(new DamagePopup(
-                        enemy.getX() + enemy.getWidth() / 2f,
-                        enemy.getY() + enemy.getHeight(),
-                        bulletDamage
-                    ));
-
-                    hitEnemy = true;
-
-                    if (enemy.isDead()) {
-                        enemies.remove(e);
-                        enemiesKilled++;
-                    }
-                    break;
-                }
-            }
-
-            if (hitEnemy) bullets.remove(i);
-        }
-    }
 
     private void handlePlayerEnemyContact() {
         if (player == null) return;
@@ -556,60 +466,6 @@ public class GameWorld {
         }
         return false;
     }
-
-    public void setAimWorld(float x, float y) {
-        this.aimWorldX = x;
-        this.aimWorldY = y;
-    }
-
-    public float[] getBookWorldPos(float distance) {
-        if (player == null) return new float[]{0f, 0f};
-
-        float cx = player.getX() + player.getWidth() / 2f;
-        float cy = player.getY() + player.getHeight() / 2f;
-
-        float dx = aimWorldX - cx;
-        float dy = aimWorldY - cy;
-
-        float len = (float)Math.sqrt(dx * dx + dy * dy);
-        if (len == 0f) return new float[]{cx, cy};
-
-        dx /= len;
-        dy /= len;
-
-        float sx = cx + dx * distance;
-        float sy = cy + dy * distance;
-
-        // Optional: keep the book point out of walls (tiny 4x4 probe)
-        if (rectHitsWall(sx - 2, sy - 2, 4, 4)) {
-            // pull it halfway back toward player until valid
-            for (int i = 0; i < 6; i++) {
-                sx = (sx + cx) * 0.5f;
-                sy = (sy + cy) * 0.5f;
-                if (!rectHitsWall(sx - 2, sy - 2, 4, 4)) break;
-            }
-        }
-
-        return new float[]{sx, sy};
-    }
-
-    /** Angle the book should face (optional, for rotation). */
-    public float getAimAngleDeg() {
-        if (player == null) return 0f;
-
-        float cx = player.getX() + player.getWidth() / 2f;
-        float cy = player.getY() + player.getHeight() / 2f;
-
-        float dx = aimWorldX - cx;
-        float dy = aimWorldY - cy;
-
-        return (float)Math.toDegrees(Math.atan2(dy, dx));
-    }
-
-    public Weapon getWeapon() {
-        return weapon;
-    }
-
     public int getCoins() { return coins; }
     public int getSouls() { return souls; }
 
@@ -641,6 +497,121 @@ public class GameWorld {
         }
         return null;
     }
+
+    public void setAimWorld(float x, float y) {
+        aimWorldX = x;
+        aimWorldY = y;
+    }
+
+    public Vector2 getAimWorld() {
+        return (new Vector2(aimWorldX, aimWorldY));
+    }
+
+    private Vector2 getAimDirection() {
+        Vector2 mouse = new Vector2(aimWorldX, aimWorldY);
+
+        float px = player.getX() + player.getWidth() / 2f;
+        float py = player.getY() + player.getHeight() / 2f;
+
+        return mouse.sub(px, py);
+    }
+
+    private void facePlayerToward(Vector2 dir) {
+        if (Math.abs(dir.x) > Math.abs(dir.y)) {
+            player.setFacing(dir.x > 0 ? Player.Facing.RIGHT : Player.Facing.LEFT);
+        }
+        else {
+            player.setFacing(dir.y > 0 ? Player.Facing.UP : Player.Facing.DOWN);
+        }
+    }
+
+    public Weapon getWeapon() {
+        return weapon;
+    }
+
+    public Vector2 getAttackPosition() {
+        float px = player.getX() + player.getWidth() / 2f; // True X
+        float py = player.getY() + player.getHeight() / 2f; // True Y
+
+        float mx = aimWorldX;
+        float my = aimWorldY;
+
+        float dx = mx - px; //direction x
+        float dy = my - py; //direction y
+        float len = (float)Math.sqrt(dx*dx + dy*dy); //calculating direction length
+        if (len != 0f) { dx /= len; dy /= len; } //normalize function
+
+        float offset = 25f;
+        float anchorX = px + dx * offset;
+        float anchorY = py + dy * offset;
+
+        float drawX = anchorX - weapon.getWidth() / 2f;
+        float drawY = anchorY - weapon.getHeight() / 2f;
+
+        Vector2 weaponPos = new Vector2(drawX, drawY);
+
+        return weaponPos;
+    }
+
+    // ... inside GameWorld.java ...
+
+    private void performMeleeAttack(Vector2 mouseWorld) {
+        // direction to mouse
+        float px = player.getX() + player.getWidth() * 0.5f;
+        float py = player.getY() + player.getHeight() * 0.5f;
+
+        Vector2 dir = new Vector2(mouseWorld.x - px, mouseWorld.y - py);
+        if (dir.len2() < 0.0001f) dir.set(1, 0);
+        dir.nor();
+
+        // Place hitbox out in front of player.
+        // Option B: the hitbox *follows the player* for its lifetime.
+        // This prevents dash-before-swing (or any movement during swing) from desyncing the hitbox.
+        float reach = 24f;             // distance from player center to hitbox center
+        float hitW = 28f;              // hitbox width
+        float hitH = 22f;              // hitbox height
+        float duration = 0.08f;        // how long it can hit (usually short)
+        int damage = 1;
+
+        meleeHitboxes.add(new AttackHitbox(hitW, hitH, dir, reach, duration, damage, px, py));
+    }
+
+    private void updateMeleeHitboxes(float delta) {
+        // Current player center (used to keep hitboxes aligned each frame)
+        float pcx = player.getX() + player.getWidth() * 0.5f;
+        float pcy = player.getY() + player.getHeight() * 0.5f;
+
+        for (int i = meleeHitboxes.size() - 1; i >= 0; i--) {
+            AttackHitbox hb = meleeHitboxes.get(i);
+            hb.update(delta, pcx, pcy);
+
+            if (hb.isExpired()) {
+                meleeHitboxes.remove(i);
+                continue;
+            }
+
+            // collisions vs enemies
+            for (int e = enemies.size() - 1; e >= 0; e--) {
+                Enemy enemy = enemies.get(e);
+                if (enemy == null) continue;
+
+                if (overlaps(hb.rect.x, hb.rect.y, hb.rect.width, hb.rect.height,
+                    enemy.getX(), enemy.getY(), enemy.getWidth(), enemy.getHeight())) {
+
+                    enemy.takeDamage(hb.damage);
+
+                    // Optional: knock enemy away in hb.dir direction
+                    // enemy.addKnockback(hb.dir.x * 10f, hb.dir.y * 10f);
+
+                    // IMPORTANT: prevent multi-hits in one swing:
+                    meleeHitboxes.remove(i);
+                    break;
+                }
+            }
+        }
+    }
+
+
 
     public void dispose() {
         cardTexture.dispose();

@@ -2,6 +2,8 @@ package io.github.noahdbyers.roguelite;
 
 import com.badlogic.gdx.ApplicationAdapter;
 import com.badlogic.gdx.Gdx;
+import com.badlogic.gdx.math.Vector2;
+import com.badlogic.gdx.math.Vector3;
 import com.badlogic.gdx.utils.ScreenUtils;
 import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
@@ -59,8 +61,13 @@ public class Main extends ApplicationAdapter {
     private Texture cemeteryFloor;
 
     //Weapon Textures
-    private Texture iceWeaponSheet;
-    private TextureRegion damageBook;
+    private Texture swordSheet;
+    private TextureRegion broadswordRegion;
+    private ArrayList<TextureRegion> swordSwing;
+    private Texture swordSwingSheet;
+
+    //Weapon objects
+    private Weapon broadsword;
 
     // Game objects
     private Room room;
@@ -75,12 +82,10 @@ public class Main extends ApplicationAdapter {
     private ArrayList<Button> titleScreenButtons;
     private boolean titleScreen = true;
 
-    //Creating the weapon objects
-    private Weapon magicBookWeapon;
-
     //Creating the audio manager
     private AudioManager audio;
 
+    private Vector2 mouseWorld = new Vector2();
 
     @Override
     public void create() {
@@ -101,7 +106,18 @@ public class Main extends ApplicationAdapter {
         titleScreenBackgroundTex = new Texture("ui/title_screen.png");
         generalAssets = new Texture("ui/general_assets.png");
         uiBanners = new Texture("ui/bannerSpritesheet.png");
-        iceWeaponSheet = new Texture("weapons/iceWeapons.png");
+        swordSheet = new Texture("weapons/File.png");
+        broadswordRegion = new TextureRegion(swordSheet, 0, 192, 64, 64);
+        swordSwingSheet = new Texture("weapons/swordSwing.png");
+
+        swordSwing = new ArrayList<>();
+        Collections.addAll(swordSwing,
+            new TextureRegion(swordSwingSheet, 0, 0, 32, 32),
+            new TextureRegion(swordSwingSheet, 32, 0, 32, 32),
+            new TextureRegion(swordSwingSheet, 64, 0, 32, 32),
+            new TextureRegion(swordSwingSheet, 96, 0, 32, 32),
+            new TextureRegion(swordSwingSheet, 128, 0, 32, 32)
+        );
 
         cemeteryTiles = new Texture("cemetery/cemeteryTiles.png");
         cemeteryFloor = new Texture("cemetery/cemeteryFloor.png");
@@ -142,18 +158,15 @@ public class Main extends ApplicationAdapter {
             new TextureRegion(generalAssets, 116, 404, 32, 32),
             new TextureRegion(generalAssets, 116, 404, 32, 32));
 
-        //Weapon Textures
-        damageBook = new TextureRegion(iceWeaponSheet, 146, 80, 12, 15);
-
-        //Create weapons
-        magicBookWeapon = new Weapon("Magic Book", 0.25f, damageBook);
-
         // Create title screen buttons
         marketButton = new Button(205, 20, 80, 80, null, marketButtonTextures);
         settingsCogButton = new Button(45, 20, 80, 80, null, settingsCogTextures);
         playButton = new Button(45, 360, 240, 80, "PLAY", basicButtonTextures);
 
         Collections.addAll(titleScreenButtons, marketButton, settingsCogButton, playButton);
+
+        broadsword = new Weapon("Iron Broadsword",
+            0.25f, 64, 64, broadswordRegion, swordSwing);
 
         // Do NOT create the world here — only when starting run
     }
@@ -192,8 +205,7 @@ public class Main extends ApplicationAdapter {
         player = new Player(100, 100, 170, 32, 32);
         world = new GameWorld(room, player, spriteBatch);
         world.setAudio(audio);
-        world.setWeapon(magicBookWeapon);
-
+        world.setWeapon(broadsword);
 
         UI = new UserInterface(VIRTUAL_WIDTH, VIRTUAL_HEIGHT, world, shapeRenderer, new ArrayList<>(), spriteBatch);
     }
@@ -236,6 +248,9 @@ public class Main extends ApplicationAdapter {
         spriteBatch.setProjectionMatrix(camera.combined);
         shapeRenderer.setProjectionMatrix(camera.combined);
 
+        mouseWorld.set(Gdx.input.getX(), Gdx.input.getY());
+        viewport.unproject(mouseWorld);
+
         if (titleScreen) {
             spriteBatch.begin();
 
@@ -270,10 +285,14 @@ public class Main extends ApplicationAdapter {
                 // Convert mouse screen -> world using the SAME viewport you render with
                 com.badlogic.gdx.math.Vector2 mouse = new com.badlogic.gdx.math.Vector2(Gdx.input.getX(), Gdx.input.getY());
                 viewport.unproject(mouse);
-                world.setAimWorld(mouse.x, mouse.y);
                 world.update(delta);
+                world.setAimWorld(mouseWorld.x, mouseWorld.y);
             }
             if (UI != null) UI.drawQueue();
+        }
+
+        if (Gdx.input.justTouched()) {
+
         }
     }
 
@@ -291,14 +310,13 @@ public class Main extends ApplicationAdapter {
         uiBanners.dispose();
         titleScreenBackgroundTex.dispose();
         generalAssets.dispose();
+        swordSheet.dispose();
 
         cemeteryTiles.dispose();
         cemeteryFloor.dispose();
 
         Zombie.disposeShared(); // if you’re using shared zombie textures
         audio.dispose(); // if you have a singleton
-
-        System.out.println("Main dispose called");
     }
 
 
