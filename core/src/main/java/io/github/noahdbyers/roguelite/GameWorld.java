@@ -71,6 +71,40 @@ public class GameWorld {
      */
     private final IdentityHashMap<AttackHitbox, HashSet<Enemy>> hitboxHits = new IdentityHashMap<>();
 
+    // -------------------- Freeze Frames (Hit Stop) --------------------
+    private float freezeTimer = 0f;
+    private final float FREEZE_DURATION = 0.08f;
+
+    /**
+     * Freeze once per attack/hitbox.
+     */
+    private final IdentityHashMap<AttackHitbox, Boolean> hitboxFreezeUsed = new IdentityHashMap<>();
+
+    /**
+     * Gate HIT audio once per attack/hitbox (even if it hits multiple enemies).
+     */
+    private final IdentityHashMap<AttackHitbox, Boolean> hitboxHitSfxUsed = new IdentityHashMap<>();
+
+    /**
+     * Gate SCREEN SHAKE once per attack/hitbox.
+     */
+    private final IdentityHashMap<AttackHitbox, Boolean> hitboxShakeUsed = new IdentityHashMap<>();
+
+    // -------------------- Screen shake callback --------------------
+    public interface ScreenShake {
+        void addShake(float intensity, float duration);
+    }
+
+    private ScreenShake shake;
+
+    public void setScreenShake(ScreenShake shake) {
+        this.shake = shake;
+    }
+
+    // Shake tuning
+    private static final float HIT_SHAKE_INTENSITY = 6f;
+    private static final float HIT_SHAKE_DURATION  = 0.12f;
+
     private AudioManager audio;
 
     public GameWorld(Room room, Player player, SpriteBatch spriteBatch) {
@@ -118,6 +152,13 @@ public class GameWorld {
 
         if (gameOver) return;
 
+        // Freeze frames: pause the world update while timer is active
+        if (freezeTimer > 0f) {
+            freezeTimer -= delta;
+            if (freezeTimer < 0f) freezeTimer = 0f;
+            return;
+        }
+
         // Pause world while choosing upgrades
         if (choosingUpgrade) {
             handleUpgradeInput();
@@ -133,7 +174,7 @@ public class GameWorld {
         // Update player
         player.update(room, room.getTileSize());
         player.updateTimers(delta);
-        weapon.updateTimers(delta);
+        if (weapon != null) weapon.updateTimers(delta);
 
         // Update enemies
         for (Enemy e : enemies) {
@@ -150,15 +191,12 @@ public class GameWorld {
             Vector2 aimDir = getAimDirection(); // mouseWorld - playerCenter
             facePlayerToward(aimDir);
 
-            if(weapon.isOnCooldown()) {
+            if (weapon.isOnCooldown()) {
                 player.startDash(aimDir.x, aimDir.y);
                 weapon.startAttack(delta);
 
-
-                // Lock facing during attack animation
                 player.startAttackLock(0.25f);
                 performMeleeAttack(getAimWorld());
-                audio.playSwordHit();
             }
         }
 
@@ -195,6 +233,12 @@ public class GameWorld {
 
         meleeHitboxes.clear();
         hitboxHits.clear();
+        hitboxFreezeUsed.clear();
+        hitboxHitSfxUsed.clear();
+        hitboxShakeUsed.clear();
+
+        // Reset freeze
+        freezeTimer = 0f;
 
         // Reset combat tuning
         attackCooldown = 0f;
@@ -328,21 +372,29 @@ public class GameWorld {
         float hitH = 64f;
         float duration = 0.08f;
 
-        // Lock damage at swing time so upgrades mid-swing don't change it
         int damage = (weapon != null) ? weapon.getDamage() : 1;
 
         AttackHitbox hb = new AttackHitbox(hitW, hitH, dir, reach, duration, damage, px, py);
         meleeHitboxes.add(hb);
         hitboxHits.put(hb, new HashSet<>());
+
+        hitboxFreezeUsed.put(hb, false);
+        hitboxHitSfxUsed.put(hb, false);
+        hitboxShakeUsed.put(hb, false);
     }
 
     /**
      * Updates hitboxes, keeps them aligned to player, and applies damage to all
      * overlapping enemies (each enemy at most once per hitbox).
+     *
+     * Freeze frames trigger ONCE per hitbox when the first enemy is hit,
+     * even if multiple enemies are hit in the same swing.
+     *
+     * Hit audio triggers ONCE per hitbox when the first enemy is hit.
+     * Screen shake triggers ONCE per hitbox when the first enemy is hit.
      */
     private void updateMeleeHitboxes(float delta) {
         if (player == null) return;
-        boolean hit = false;
 
         float pcx = player.getX() + player.getWidth() * 0.5f;
         float pcy = player.getY() + player.getHeight() * 0.5f;
@@ -354,6 +406,9 @@ public class GameWorld {
             if (hb.isExpired()) {
                 meleeHitboxes.remove(i);
                 hitboxHits.remove(hb);
+                hitboxFreezeUsed.remove(hb);
+                hitboxHitSfxUsed.remove(hb);
+                hitboxShakeUsed.remove(hb);
                 continue;
             }
 
@@ -363,12 +418,14 @@ public class GameWorld {
                 hitboxHits.put(hb, alreadyHit);
             }
 
-            // Check all enemies; do NOT remove the hitbox on first hit.
+            boolean freezeUsed = Boolean.TRUE.equals(hitboxFreezeUsed.get(hb));
+            boolean sfxUsed = Boolean.TRUE.equals(hitboxHitSfxUsed.get(hb));
+            boolean shakeUsed = Boolean.TRUE.equals(hitboxShakeUsed.get(hb));
+
             for (int e = enemies.size() - 1; e >= 0; e--) {
                 Enemy enemy = enemies.get(e);
                 if (enemy == null) continue;
 
-                // If this hitbox already hit this enemy, skip (prevents per-frame multi-hit)
                 if (alreadyHit.contains(enemy)) continue;
 
                 if (overlaps(hb.rect.x, hb.rect.y, hb.rect.width, hb.rect.height,
@@ -376,13 +433,34 @@ public class GameWorld {
 
                     enemy.takeDamage(hb.damage);
                     alreadyHit.add(enemy);
-                    audio.playHit();
 
                     damagePopups.add(new DamagePopup(enemy.getX(), enemy.getY(), hb.damage));
                     enemy.takeKnockback(hb.dir.x, hb.dir.y, 400f);
+
                     if (enemy.isDead()) {
                         enemies.remove(e);
                         enemiesKilled++;
+                    }
+
+                    // Gate hit SFX once per attack/hitbox
+                    if (!sfxUsed) {
+                        if (audio != null) audio.playHit();
+                        sfxUsed = true;
+                        hitboxHitSfxUsed.put(hb, true);
+                    }
+
+                    // Gate freeze once per attack/hitbox
+                    if (!freezeUsed) {
+                        freezeTimer = FREEZE_DURATION;
+                        freezeUsed = true;
+                        hitboxFreezeUsed.put(hb, true);
+                    }
+
+                    // Gate screen shake once per attack/hitbox
+                    if (!shakeUsed) {
+                        if (shake != null) shake.addShake(HIT_SHAKE_INTENSITY, HIT_SHAKE_DURATION);
+                        shakeUsed = true;
+                        hitboxShakeUsed.put(hb, true);
                     }
                 }
             }
