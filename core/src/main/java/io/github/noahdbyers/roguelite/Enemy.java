@@ -160,13 +160,10 @@ public class Enemy extends Entity {
      * Collision test using Room.collisions layer where value 76 == solid.
      * Out-of-bounds is treated as solid.
      */
-    public boolean collidesWithRoom(Room room, int tileSize) {
-        if (room == null) return true;
+    private boolean collidesWithRoom(Room room, int tileSize) {
+        if (room == null) return false;
 
-        int[][] col = null;
-        try { col = room.getCollisions(); } catch (Throwable ignored) {}
-
-        // If collisions grid missing, treat as no collision (change to true if you prefer fail-closed)
+        int[][] col = room.getCollisions(); // must exist in Room
         if (col == null) return false;
 
         int roomW = room.getRoomWidth();
@@ -177,20 +174,29 @@ public class Enemy extends Entity {
         float w = getWidth();
         float h = getHeight();
 
-        // Use -1 so standing exactly on a tile edge doesn't sample the next tile
         int left   = (int)Math.floor(x / tileSize);
         int right  = (int)Math.floor((x + w - 1f) / tileSize);
         int bottom = (int)Math.floor(y / tileSize);
         int top    = (int)Math.floor((y + h - 1f) / tileSize);
 
+        left   = clamp(left,   0, roomW - 1);
+        right  = clamp(right,  0, roomW - 1);
+        bottom = clamp(bottom, 0, roomH - 1);
+        top    = clamp(top,    0, roomH - 1);
+
+        // ✅ If your rendering flips Y, collision should too:
         for (int ty = bottom; ty <= top; ty++) {
+            int srcY = (roomH - 1) - ty;
             for (int tx = left; tx <= right; tx++) {
-                if (isSolid(col, roomW, roomH, tx, ty)) return true;
+                if (col[srcY][tx] == 76) return true; // 76 = solid
             }
         }
         return false;
     }
 
+    private static int clamp(int v, int lo, int hi) {
+        return Math.max(lo, Math.min(hi, v));
+    }
     private boolean isSolid(int[][] col, int roomW, int roomH, int tx, int ty) {
         // out of bounds = solid
         if (tx < 0 || tx >= roomW || ty < 0 || ty >= roomH) return true;
