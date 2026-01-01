@@ -102,6 +102,16 @@ public class Main extends ApplicationAdapter {
     private float baseCamX = VIRTUAL_WIDTH / 2f;
     private float baseCamY = VIRTUAL_HEIGHT / 2f;
 
+    // Camera follow / zoom
+    private float camZoom = 0.75f;      // < 1 = zoom IN, > 1 = zoom OUT
+    private float zoomSpeed = 0.15f;    // optional zoom adjustment speed
+    private float followLerp = 12f;     // higher = snappier follow
+
+    // (optional) smooth follow target
+    private float camTargetX = VIRTUAL_WIDTH / 2f;
+    private float camTargetY = VIRTUAL_HEIGHT / 2f;
+
+
     /** Call this from GameWorld (through a callback) to trigger screen shake. */
     public void addShake(float intensity, float duration) {
         // Keep the strongest/longest if multiple hits happen close together
@@ -224,6 +234,37 @@ public class Main extends ApplicationAdapter {
     }
 
     /** Creates a fresh run (room/player/world/UI) safely. */
+    // Call this every frame BEFORE world.update(...)
+    private void updateAimWorld(GameWorld world) {
+        Room room = world.getRoom();
+        if (room == null) return;
+
+        float ts = room.getTileSize();
+        float mapW = room.getRoomWidth() * ts;
+        float mapH = room.getRoomHeight() * ts;
+
+        float screenW = Gdx.graphics.getWidth();
+        float screenH = Gdx.graphics.getHeight();
+
+        float scale = Math.min(screenW / mapW, screenH / mapH);
+        float offsetX = (screenW - mapW * scale) * 0.5f;
+        float offsetY = (screenH - mapH * scale) * 0.5f;
+
+        // Mouse in screen pixels (origin top-left), convert to bottom-left
+        float sx = Gdx.input.getX();
+        float sy = screenH - Gdx.input.getY();
+
+        // Convert to world coords (inverse of translate+scale used for rendering)
+        float wx = (sx - offsetX) / scale;
+        float wy = (sy - offsetY) / scale;
+
+        // Optional: clamp to map bounds so it doesn't go negative/outside
+        wx = Math.max(0f, Math.min(mapW, wx));
+        wy = Math.max(0f, Math.min(mapH, wy));
+
+        world.setAimWorld(wx, wy);
+    }
+
     private void startNewRun() {
         // Reset shake
         shakeTime = 0f;
@@ -249,6 +290,7 @@ public class Main extends ApplicationAdapter {
         world = new GameWorld(room, player, spriteBatch);
         world.setAudio(audio);
         world.setWeapon(broadsword);
+        world.setScreenShake(this::addShake);
 
         // IMPORTANT: GameWorld must implement setScreenShake(...) for this to compile.
         // Example signature:
@@ -288,18 +330,24 @@ public class Main extends ApplicationAdapter {
 
         viewport.apply();
 
-        // Update mouse world position (for both title and gameplay)
-        mouseWorld.set(Gdx.input.getX(), Gdx.input.getY());
-        viewport.unproject(mouseWorld);
+        float delta = Gdx.graphics.getDeltaTime();
 
+        // -------------------- Title Screen --------------------
         if (titleScreen) {
-            // Title screen camera (stable)
             baseCamX = VIRTUAL_WIDTH / 2f;
             baseCamY = VIRTUAL_HEIGHT / 2f;
-            updateCameraWithShake(Gdx.graphics.getDeltaTime());
+
+            // If you use zoom in gameplay, keep title zoom at 1 for UI consistency
+            camera.zoom = 1f;
+
+            updateCameraWithShake(delta);
 
             spriteBatch.setProjectionMatrix(camera.combined);
             shapeRenderer.setProjectionMatrix(camera.combined);
+
+            // Mouse world for buttons (title screen uses same viewport/camera)
+            mouseWorld.set(Gdx.input.getX(), Gdx.input.getY());
+            viewport.unproject(mouseWorld);
 
             spriteBatch.begin();
 
@@ -334,23 +382,23 @@ public class Main extends ApplicationAdapter {
         }
 
         // -------------------- Gameplay --------------------
-        float delta = Gdx.graphics.getDeltaTime();
-
         if (world != null) {
-            // Set aim BEFORE update so attack uses current mouse position this frame
-            world.setAimWorld(mouseWorld.x, mouseWorld.y);
 
-            // Update camera base to follow player (optional but usually desirable)
+            // ---- 1) CAMERA FOLLOW + CLAMP (WITH ZOOM) ----
+            // Tune this: < 1 = zoom IN, > 1 = zoom OUT
+            float camZoom = 0.75f;
+            camera.zoom = camZoom;
+
             if (player != null && room != null) {
                 float px = player.getX() + player.getWidth() * 0.5f;
                 float py = player.getY() + player.getHeight() * 0.5f;
 
-                // Clamp camera to room bounds so you don't show outside the map
                 float roomW = room.getRoomWidth() * room.getTileSize();
                 float roomH = room.getRoomHeight() * room.getTileSize();
 
-                float halfW = VIRTUAL_WIDTH * 0.5f;
-                float halfH = VIRTUAL_HEIGHT * 0.5f;
+                // IMPORTANT: clamp must account for zoom because visible world area changes
+                float halfW = (VIRTUAL_WIDTH * camZoom) * 0.5f;
+                float halfH = (VIRTUAL_HEIGHT * camZoom) * 0.5f;
 
                 baseCamX = clampf(px, halfW, Math.max(halfW, roomW - halfW));
                 baseCamY = clampf(py, halfH, Math.max(halfH, roomH - halfH));
@@ -359,10 +407,21 @@ public class Main extends ApplicationAdapter {
                 baseCamY = VIRTUAL_HEIGHT / 2f;
             }
 
+            // Apply shake + snap + camera.update()
             updateCameraWithShake(delta);
 
             spriteBatch.setProjectionMatrix(camera.combined);
             shapeRenderer.setProjectionMatrix(camera.combined);
+
+            // ---- 2) NOW compute mouseWorld using the UPDATED camera ----
+            mouseWorld.set(Gdx.input.getX(), Gdx.input.getY());
+            viewport.unproject(mouseWorld);
+
+            // Set aim AFTER camera update so it matches what you see on screen
+            world.setAimWorld(mouseWorld.x, mouseWorld.y);
+
+            // If you have extra aim logic, keep it here (optional)
+            // updateAimWorld(world);
 
             world.update(delta);
         }
@@ -380,14 +439,13 @@ public class Main extends ApplicationAdapter {
             shakeTime -= delta;
             if (shakeTime < 0f) shakeTime = 0f;
 
-            float t = (shakeDuration <= 0f) ? 0f : (shakeTime / shakeDuration); // 1 -> 0
-            float strength = shakeIntensity * t * t; // ease out
+            float t = (shakeDuration <= 0f) ? 0f : (shakeTime / shakeDuration);
+            float strength = shakeIntensity * t * t;
 
             sx = (shakeRng.nextFloat() * 2f - 1f) * strength;
             sy = (shakeRng.nextFloat() * 2f - 1f) * strength;
         }
 
-        // Snap to whole pixels for cleaner pixel-art rendering
         float camX = Math.round(baseCamX + sx);
         float camY = Math.round(baseCamY + sy);
 

@@ -292,11 +292,46 @@ public class Player extends Entity {
     }
 
     // -------------------- Collision (NEW SYSTEM) --------------------
-    private boolean collidesWithRoom(Room room, int tileSize) {
-        int[][] col = null;
-        try { col = room.getCollisions(); } catch (Throwable ignored) {}
+    private boolean collidesWithRoom(Room room) {
+        if (room == null) return false;
 
-        // If no collision layer exists, treat as no collision
+        int[][] col = room.getCollisions();
+        if (col == null) return false;
+
+        final int tileSize = room.getTileSize();
+        final int roomW = room.getRoomWidth();
+        final int roomH = room.getRoomHeight();
+
+        float x = getX();
+        float y = getY();
+        float w = getWidth();
+        float h = getHeight();
+
+        // sample covered tiles (use -1 so exact-edge doesn't spill into next tile)
+        int left   = (int)Math.floor(x / tileSize);
+        int right  = (int)Math.floor((x + w - 1f) / tileSize);
+        int bottom = (int)Math.floor(y / tileSize);
+        int top    = (int)Math.floor((y + h - 1f) / tileSize);
+
+        // clamp to grid bounds
+        left   = clamp(left,   0, roomW - 1);
+        right  = clamp(right,  0, roomW - 1);
+        bottom = clamp(bottom, 0, roomH - 1);
+        top    = clamp(top,    0, roomH - 1);
+
+        for (int ty = bottom; ty <= top; ty++) {
+            int srcY = (roomH - 1) - ty; // ✅ match the renderer’s flip
+            for (int tx = left; tx <= right; tx++) {
+                if (isSolid(col, tx, srcY)) return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean collidesWithRoom(Room room, int tileSize) {
+        if (room == null) return false;
+
+        int[][] col = room.getCollisions(); // must exist in Room
         if (col == null) return false;
 
         int roomW = room.getRoomWidth();
@@ -307,18 +342,40 @@ public class Player extends Entity {
         float w = getWidth();
         float h = getHeight();
 
-        // -1 avoids sampling the next tile when exactly on an edge
         int left   = (int)Math.floor(x / tileSize);
         int right  = (int)Math.floor((x + w - 1f) / tileSize);
         int bottom = (int)Math.floor(y / tileSize);
         int top    = (int)Math.floor((y + h - 1f) / tileSize);
 
+        left   = clamp(left,   0, roomW - 1);
+        right  = clamp(right,  0, roomW - 1);
+        bottom = clamp(bottom, 0, roomH - 1);
+        top    = clamp(top,    0, roomH - 1);
+
+        // ✅ If your rendering flips Y, collision should too:
         for (int ty = bottom; ty <= top; ty++) {
+            int srcY = (roomH - 1) - ty;
             for (int tx = left; tx <= right; tx++) {
-                if (isSolid(col, roomW, roomH, tx, ty)) return true;
+                if (col[srcY][tx] == 76) return true; // 76 = solid
             }
         }
         return false;
+    }
+
+
+    private boolean isSolid(int[][] col, int tx, int ty) {
+        // safe bounds (should already be clamped, but cheap + robust)
+        if (ty < 0 || ty >= col.length) return true;
+        if (tx < 0 || tx >= col[ty].length) return true;
+
+        int v = col[ty][tx];
+
+        // Your collision layer uses 76 for walls, 0 for empty.
+        return v == 76;
+    }
+
+    private static int clamp(int v, int lo, int hi) {
+        return Math.max(lo, Math.min(hi, v));
     }
 
     private boolean isSolid(int[][] col, int roomW, int roomH, int tx, int ty) {

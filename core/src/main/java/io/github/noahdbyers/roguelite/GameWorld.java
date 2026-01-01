@@ -546,8 +546,103 @@ public class GameWorld {
     public int getSouls() { return souls; }
 
     // NOTE: I left melee hitbox code as-is (unchanged from your file)
-    private void performMeleeAttack(Vector2 mouseWorld) { /* keep your existing */ }
-    private void updateMeleeHitboxes(float delta) { /* keep your existing */ }
+    private void performMeleeAttack(Vector2 mouseWorld) {
+        float px = player.getX() + player.getWidth() * 0.5f;
+        float py = player.getY() + player.getHeight() * 0.5f;
+
+        Vector2 dir = new Vector2(mouseWorld.x - px, mouseWorld.y - py);
+        if (dir.len2() < 0.0001f) dir.set(1, 0);
+        dir.nor();
+
+        float reach = 24f;
+        float hitW = 64f;
+        float hitH = 64f;
+        float duration = 0.08f;
+
+        int damage = (weapon != null) ? weapon.getDamage() : 1;
+
+        AttackHitbox hb = new AttackHitbox(hitW, hitH, dir, reach, duration, damage, px, py);
+        meleeHitboxes.add(hb);
+        hitboxHits.put(hb, new HashSet<>());
+
+        hitboxFreezeUsed.put(hb, false);
+        hitboxHitSfxUsed.put(hb, false);
+        hitboxShakeUsed.put(hb, false);
+    }
+    private void updateMeleeHitboxes(float delta) {
+        if (player == null) return;
+
+        float pcx = player.getX() + player.getWidth() * 0.5f;
+        float pcy = player.getY() + player.getHeight() * 0.5f;
+
+        for (int i = meleeHitboxes.size() - 1; i >= 0; i--) {
+            AttackHitbox hb = meleeHitboxes.get(i);
+            hb.update(delta, pcx, pcy);
+
+            if (hb.isExpired()) {
+                meleeHitboxes.remove(i);
+                hitboxHits.remove(hb);
+                hitboxFreezeUsed.remove(hb);
+                hitboxHitSfxUsed.remove(hb);
+                hitboxShakeUsed.remove(hb);
+                continue;
+            }
+
+            HashSet<Enemy> alreadyHit = hitboxHits.get(hb);
+            if (alreadyHit == null) {
+                alreadyHit = new HashSet<>();
+                hitboxHits.put(hb, alreadyHit);
+            }
+
+            boolean freezeUsed = Boolean.TRUE.equals(hitboxFreezeUsed.get(hb));
+            boolean sfxUsed = Boolean.TRUE.equals(hitboxHitSfxUsed.get(hb));
+            boolean shakeUsed = Boolean.TRUE.equals(hitboxShakeUsed.get(hb));
+
+            for (int e = enemies.size() - 1; e >= 0; e--) {
+                Enemy enemy = enemies.get(e);
+                if (enemy == null) continue;
+
+                if (alreadyHit.contains(enemy)) continue;
+
+                if (overlaps(hb.rect.x, hb.rect.y, hb.rect.width, hb.rect.height,
+                    enemy.getX(), enemy.getY(), enemy.getWidth(), enemy.getHeight())) {
+
+                    enemy.takeDamage(hb.damage);
+                    alreadyHit.add(enemy);
+
+                    damagePopups.add(new DamagePopup(enemy.getX(), enemy.getY(), hb.damage));
+                    enemy.takeKnockback(hb.dir.x, hb.dir.y, 400f);
+
+                    if (enemy.isDead()) {
+                        enemies.remove(e);
+                        enemiesKilled++;
+                    }
+
+                    // Gate hit SFX once per attack/hitbox
+                    if (!sfxUsed) {
+                        if (audio != null) audio.playHit();
+                        sfxUsed = true;
+                        hitboxHitSfxUsed.put(hb, true);
+                    }
+
+                    // Gate freeze once per attack/hitbox
+                    if (!freezeUsed) {
+                        freezeTimer = FREEZE_DURATION;
+                        freezeUsed = true;
+                        hitboxFreezeUsed.put(hb, true);
+                    }
+
+                    // Gate screen shake once per attack/hitbox
+                    if (!shakeUsed) {
+                        if (shake != null) shake.addShake(HIT_SHAKE_INTENSITY, HIT_SHAKE_DURATION);
+                        System.out.println("SHAKE!");
+                        shakeUsed = true;
+                        hitboxShakeUsed.put(hb, true);
+                    }
+                }
+            }
+        }
+    }
 
     public void dispose() {
         cardTexture.dispose();

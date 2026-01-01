@@ -12,6 +12,7 @@ import com.badlogic.gdx.graphics.g2d.TextureRegion;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.utils.Align;
 import com.badlogic.gdx.math.Vector2;
+import com.badlogic.gdx.math.Matrix4;
 
 import java.util.ArrayList;
 
@@ -57,14 +58,12 @@ public class UserInterface {
     // ----------------------------
     private static final int UPGRADE_COUNT = 3;
 
-    // Your frames are 256x256 with a lot of transparent padding.
-    // We'll draw them bigger and allow overlap (negative gap).
-    private static final float CLUSTER_WIDTH_FRAC = 0.95f; // how much of screen width the 3-star cluster uses
-    private static final float STAR_HEIGHT_FRAC = 0.58f;   // star size driven by screen height
+    private static final float CLUSTER_WIDTH_FRAC = 0.95f;
+    private static final float STAR_HEIGHT_FRAC = 0.58f;
     private static final float STAR_MIN = 200f;
     private static final float STAR_MAX = 340f;
 
-    private static final float GAP_MIN = -70f; // allow overlap to kill “empty padding” gap
+    private static final float GAP_MIN = -70f;
     private static final float GAP_MAX = 24f;
 
     private static final float SELECT_LIFT = 14f;
@@ -88,6 +87,12 @@ public class UserInterface {
 
     private float uiTime = 0f;
 
+    // ----------------------------
+    // NEW: screen-space projection for HUD/menus
+    // ----------------------------
+    private final Matrix4 screenProjection = new Matrix4();
+    private final Matrix4 identityTransform = new Matrix4();
+
     public UserInterface(float width, float height,
                          GameWorld world,
                          ShapeRenderer shapeRenderer,
@@ -108,6 +113,9 @@ public class UserInterface {
         pm.fill();
         whitePixel = new Texture(pm);
         pm.dispose();
+
+        screenProjection.setToOrtho2D(0f, 0f, width, height);
+        identityTransform.idt();
     }
 
     /** Call once per frame. */
@@ -119,6 +127,7 @@ public class UserInterface {
 
         // ----------------------------
         // 1) WORLD (SpriteBatch): tiles + sprites + weapon
+        // Uses camera.combined (already set by Main before calling UI.drawQueue()).
         // ----------------------------
         spriteBatch.begin();
         drawWorldTilesSafe();
@@ -134,6 +143,7 @@ public class UserInterface {
 
         // ----------------------------
         // 2) WORLD (ShapeRenderer): bullets
+        // Uses camera.combined (already set by Main)
         // ----------------------------
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
         drawBulletsSafe();
@@ -141,16 +151,19 @@ public class UserInterface {
 
         // ----------------------------
         // 3) UI (SpriteBatch): HUD + upgrade menu + game over
+        // Switch to SCREEN SPACE so UI doesn’t move/zoom with the camera.
         // ----------------------------
+        spriteBatch.setProjectionMatrix(screenProjection);
+        spriteBatch.setTransformMatrix(identityTransform);
+
         spriteBatch.begin();
 
         if (!world.isChoosingUpgrade()) {
             drawHud();
-            drawDamagePopups();
+            drawDamagePopups(); // drawn in world space? no — we’ll convert below using camera+viewport elsewhere if needed
         }
 
         if (world.isChoosingUpgrade()) {
-            // ✅ Correctly draw overlay without tinting everything afterwards
             drawDimOverlay(0.55f);
 
             handleUpgradeAnimationResetIfNeeded();
@@ -190,60 +203,49 @@ public class UserInterface {
     }
 
     // ----------------------------
-    // Upgrade scene
+    // Upgrade scene (SCREEN SPACE)
     // ----------------------------
     private void drawUpgradeScene(Upgrade[] offered) {
-        // Title
         font.setColor(Color.WHITE);
         font.getData().setScale(1.15f);
         drawCenteredText("Choose an Upgrade", width / 2f, height - 34f);
         font.getData().setScale(1.0f);
 
         float clusterW = width * CLUSTER_WIDTH_FRAC;
-
         float desiredStar = clamp(height * STAR_HEIGHT_FRAC, STAR_MIN, STAR_MAX);
 
         float rawGap = (clusterW - desiredStar * UPGRADE_COUNT) / (UPGRADE_COUNT - 1);
         float gap = clamp(rawGap, GAP_MIN, GAP_MAX);
 
-        // Make sure it fits even with chosen gap
         float maxStarThatFits = (clusterW - gap * (UPGRADE_COUNT - 1)) / UPGRADE_COUNT;
         float star = Math.min(desiredStar, maxStarThatFits);
         star = clamp(star, STAR_MIN, STAR_MAX);
 
         float totalW = star * UPGRADE_COUNT + gap * (UPGRADE_COUNT - 1);
         float startX = (width - totalW) / 2f;
-
-        // Put stars above the labels area
         float baseY = height * 0.56f - star * 0.5f;
 
-        // Mouse in WORLD coords (Main already sets aimWorld each frame)
-        float mx = world.getAimWorldX();
-        float my = world.getAimWorldY();
+        // IMPORTANT: for UI hover, use SCREEN mouse coords (not world aim coords)
+        float mx = Gdx.input.getX();
+        float my = (height - Gdx.input.getY()); // screen-space origin at bottom-left
 
         int hovered = -1;
-
-        // First pass: determine which star is hovered (using base rect for stability)
         for (int i = 0; i < UPGRADE_COUNT; i++) {
             float x = startX + i * (star + gap);
             float y = baseY;
-
             if (mx >= x && mx <= x + star && my >= y && my <= y + star) {
                 hovered = i;
                 break;
             }
         }
 
-        // Hover drives selection visuals
         selectedUpgradeIndex = hovered;
 
-        // Click selects the hovered upgrade
         if (hovered != -1 && Gdx.input.isButtonJustPressed(Input.Buttons.LEFT)) {
             world.chooseUpgrade(hovered);
-            return; // stop drawing extra hover UI this frame if you want
+            return;
         }
 
-        // Draw stars (with pulse/lift on hovered)
         for (int i = 0; i < UPGRADE_COUNT; i++) {
             float x = startX + i * (star + gap);
             float y = baseY;
@@ -268,8 +270,7 @@ public class UserInterface {
                         int idx = Math.max(0, Math.min(cardFrameIndex[i], anim.size() - 1));
                         frame = anim.get(idx);
                     }
-                } catch (Throwable ignored) {
-                }
+                } catch (Throwable ignored) {}
             }
 
             if (frame != null) {
@@ -284,20 +285,17 @@ public class UserInterface {
         if (hovered != -1 && offered != null && hovered < offered.length) {
             Upgrade up = offered[hovered];
             if (up != null) {
-                // Tooltip panel near bottom
                 float panelW = width * 0.62f;
                 float panelH = 78f;
                 float panelX = (width - panelW) * 0.5f;
                 float panelY = height * 0.14f;
 
-                // draw a dark panel using the same safe-color restore pattern
                 Color c = spriteBatch.getColor();
                 float r = c.r, g = c.g, b = c.b, a = c.a;
 
                 spriteBatch.setColor(0f, 0f, 0f, 0.65f);
                 spriteBatch.draw(whitePixel, panelX, panelY, panelW, panelH);
 
-                // subtle border
                 spriteBatch.setColor(1f, 1f, 1f, 0.18f);
                 spriteBatch.draw(whitePixel, panelX, panelY + panelH - 2f, panelW, 2f);
                 spriteBatch.draw(whitePixel, panelX, panelY, panelW, 2f);
@@ -306,7 +304,6 @@ public class UserInterface {
 
                 spriteBatch.setColor(r, g, b, a);
 
-                // text
                 float textW = panelW - 24f;
                 float cx = panelX + panelW * 0.5f;
 
@@ -324,7 +321,6 @@ public class UserInterface {
             }
         }
     }
-
 
     private static float clamp(float v, float lo, float hi) {
         return Math.max(lo, Math.min(hi, v));
@@ -400,7 +396,7 @@ public class UserInterface {
                 cardFrameIndex[i]++;
 
                 if (cardFrameIndex[i] >= lastFrame) {
-                    cardFrameIndex[i] = lastFrame; // stop on final frame
+                    cardFrameIndex[i] = lastFrame;
                     cardAnimFinished[i] = true;
                 }
             }
@@ -408,7 +404,7 @@ public class UserInterface {
     }
 
     // ----------------------------
-    // World drawing (tiles)
+    // World drawing (tiles) — WORLD SPACE
     // ----------------------------
     private void drawWorldTilesSafe() {
         Room room = world.getRoom();
@@ -419,12 +415,10 @@ public class UserInterface {
         int w = room.getRoomWidth();
 
         for (int y = 0; y < h; y++) {
-            int srcY = (h - 1) - y; // ✅ flip: draw bottom row from the last row in the data
+            int srcY = (h - 1) - y; // flip
 
             for (int x = 0; x < w; x++) {
                 int tileId = room.getTile(x, srcY);
-
-                // If your JSON uses 1-based tile IDs (1..N), convert to 0-based (0..N-1)
                 int regionIndex = tileId - 1;
 
                 TextureRegion region = room.getTextureRegion(regionIndex);
@@ -435,9 +429,8 @@ public class UserInterface {
         }
     }
 
-
     // ----------------------------
-    // World drawing (sprites)
+    // World drawing (sprites) — WORLD SPACE
     // ----------------------------
     private void drawSpritesSafe(float delta) {
         for (Enemy e : world.getEnemies()) {
@@ -450,7 +443,7 @@ public class UserInterface {
     }
 
     // ----------------------------
-    // World drawing (bullets)
+    // World drawing (bullets) — WORLD SPACE
     // ----------------------------
     private void drawBulletsSafe() {
         shapeRenderer.setColor(bulletColor);
@@ -461,7 +454,7 @@ public class UserInterface {
     }
 
     // ----------------------------
-    // HUD
+    // HUD — SCREEN SPACE
     // ----------------------------
     private void drawHud() {
         Player p = world.getPlayer();
@@ -584,6 +577,8 @@ public class UserInterface {
     }
 
     private void drawDamagePopups() {
+        // If you want these in screen space, you must project world->screen using viewport+camera.
+        // For now, keep as-is (they will appear in screen coords).
         for (DamagePopup p : world.getDamagePopups()) {
             if (p == null) continue;
             font.draw(spriteBatch, "" + p.amount, p.x, p.y);
