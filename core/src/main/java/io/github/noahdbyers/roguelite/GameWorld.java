@@ -457,7 +457,6 @@ public class GameWorld {
 
             if (hit && !player.isInvulnerable()) {
                 player.takeDamage(1);
-                player.clampToScreen();
             }
         }
     }

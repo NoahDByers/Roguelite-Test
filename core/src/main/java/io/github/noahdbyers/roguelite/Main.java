@@ -41,6 +41,7 @@ public class Main extends ApplicationAdapter {
 
     private OrthographicCamera camera;
     private Viewport viewport;
+    private float gameplayZoom = 1.0f;   // < 1 zooms IN, > 1 zooms OUT
 
     private static final float VIRTUAL_WIDTH = 640;
     private static final float VIRTUAL_HEIGHT = 480;
@@ -292,6 +293,8 @@ public class Main extends ApplicationAdapter {
         world.setWeapon(broadsword);
         world.setScreenShake(this::addShake);
 
+        player = world.getPlayer();
+        room   = world.getRoom();
         // IMPORTANT: GameWorld must implement setScreenShake(...) for this to compile.
         // Example signature:
         // public interface ScreenShake { void addShake(float intensity, float duration); }
@@ -328,18 +331,20 @@ public class Main extends ApplicationAdapter {
     public void render() {
         ScreenUtils.clear(0.15f, 0.15f, 0.2f, 1f);
 
-        viewport.apply();
-
         float delta = Gdx.graphics.getDeltaTime();
+
+        // Apply viewport BEFORE any unproject calls
+        viewport.apply();
 
         // -------------------- Title Screen --------------------
         if (titleScreen) {
             baseCamX = VIRTUAL_WIDTH / 2f;
             baseCamY = VIRTUAL_HEIGHT / 2f;
 
-            // If you use zoom in gameplay, keep title zoom at 1 for UI consistency
+            // Keep title zoom stable for UI consistency
             camera.zoom = 1f;
 
+            // Apply shake (if any) and update camera
             updateCameraWithShake(delta);
 
             spriteBatch.setProjectionMatrix(camera.combined);
@@ -384,19 +389,22 @@ public class Main extends ApplicationAdapter {
         // -------------------- Gameplay --------------------
         if (world != null) {
 
+            // Always use the authoritative instances from the world
+            Player p = world.getPlayer();
+            Room r = world.getRoom();
+
             // ---- 1) CAMERA FOLLOW + CLAMP (WITH ZOOM) ----
-            // Tune this: < 1 = zoom IN, > 1 = zoom OUT
-            float camZoom = 0.75f;
+            float camZoom = 0.75f;     // <1 zoom in, >1 zoom out
             camera.zoom = camZoom;
 
-            if (player != null && room != null) {
-                float px = player.getX() + player.getWidth() * 0.5f;
-                float py = player.getY() + player.getHeight() * 0.5f;
+            if (p != null && r != null) {
+                float px = p.getX() + p.getWidth() * 0.5f;
+                float py = p.getY() + p.getHeight() * 0.5f;
 
-                float roomW = room.getRoomWidth() * room.getTileSize();
-                float roomH = room.getRoomHeight() * room.getTileSize();
+                float roomW = r.getRoomWidth() * r.getTileSize();
+                float roomH = r.getRoomHeight() * r.getTileSize();
 
-                // IMPORTANT: clamp must account for zoom because visible world area changes
+                // visible world size depends on zoom
                 float halfW = (VIRTUAL_WIDTH * camZoom) * 0.5f;
                 float halfH = (VIRTUAL_HEIGHT * camZoom) * 0.5f;
 
@@ -410,18 +418,16 @@ public class Main extends ApplicationAdapter {
             // Apply shake + snap + camera.update()
             updateCameraWithShake(delta);
 
+            // IMPORTANT: set projection after camera update
             spriteBatch.setProjectionMatrix(camera.combined);
             shapeRenderer.setProjectionMatrix(camera.combined);
 
-            // ---- 2) NOW compute mouseWorld using the UPDATED camera ----
+            // ---- 2) Mouse world AFTER camera update ----
             mouseWorld.set(Gdx.input.getX(), Gdx.input.getY());
             viewport.unproject(mouseWorld);
 
-            // Set aim AFTER camera update so it matches what you see on screen
+            // Aim uses world coords
             world.setAimWorld(mouseWorld.x, mouseWorld.y);
-
-            // If you have extra aim logic, keep it here (optional)
-            // updateAimWorld(world);
 
             world.update(delta);
         }
@@ -430,6 +436,7 @@ public class Main extends ApplicationAdapter {
             UI.drawQueue();
         }
     }
+
 
     private void updateCameraWithShake(float delta) {
         float sx = 0f;
@@ -453,6 +460,34 @@ public class Main extends ApplicationAdapter {
         camera.update();
     }
 
+    private void updateCameraFollow(float delta) {
+        if (player == null || room == null) {
+            baseCamX = VIRTUAL_WIDTH / 2f;
+            baseCamY = VIRTUAL_HEIGHT / 2f;
+            return;
+        }
+
+        // Zoom
+        camera.zoom = gameplayZoom;
+
+        float px = player.getX() + player.getWidth() * 0.5f;
+        float py = player.getY() + player.getHeight() * 0.5f;
+
+        float roomW = room.getRoomWidth()  * room.getTileSize();
+        float roomH = room.getRoomHeight() * room.getTileSize();
+
+        // IMPORTANT: clamp using the *camera view size*, which changes with zoom
+        float halfW = (viewport.getWorldWidth()  * 0.5f) * camera.zoom;
+        float halfH = (viewport.getWorldHeight() * 0.5f) * camera.zoom;
+
+        float targetX = clampf(px, halfW, Math.max(halfW, roomW - halfW));
+        float targetY = clampf(py, halfH, Math.max(halfH, roomH - halfH));
+
+        // Smooth follow (optional). If you want instant follow, just set baseCamX/Y = targetX/Y
+        float a = 1f - (float)Math.exp(-followLerp * delta);
+        baseCamX += (targetX - baseCamX) * a;
+        baseCamY += (targetY - baseCamY) * a;
+    }
     private static float clampf(float v, float lo, float hi) {
         return Math.max(lo, Math.min(hi, v));
     }
