@@ -12,12 +12,13 @@ public class Player extends Entity {
 
     public enum Facing { UP, DOWN, LEFT, RIGHT }
 
+    private static final int COLLISION_SOLID = 76;
+
     // Movement / Facing state
     private Facing facing = Facing.DOWN;
     private Facing lastFacing = Facing.DOWN;
 
     // Attack-facing lock
-    // While > 0, the player cannot change facing direction.
     private float attackLockTimer = 0f;
     private Facing lockedFacing = Facing.DOWN;
 
@@ -38,13 +39,12 @@ public class Player extends Entity {
     public boolean isDashing() { return dashTimer > 0f; }
 
     // Animation
-    private static final float IDLE_FRAME_TIME = 0.25f; // slower idle
-    private static final float RUN_FRAME_TIME  = 0.12f; // faster run
+    private static final float IDLE_FRAME_TIME = 0.25f;
+    private static final float RUN_FRAME_TIME  = 0.12f;
 
     private float animTimer = 0f;
     private int frameIndex = 0;
 
-    // Pause animation (for upgrade selection, menus, etc.)
     private boolean animationPaused = false;
 
     // Sprites
@@ -73,7 +73,7 @@ public class Player extends Entity {
         super(x, y, speed, width, height);
 
         idleSheet = new Texture("player/Idle.png");
-        runSheet = new Texture("player/Run.png");
+        runSheet  = new Texture("player/Run.png");
 
         final int fw = 16;
         final int fh = 24;
@@ -98,29 +98,17 @@ public class Player extends Entity {
     }
 
     // -------------------- Animation Pause --------------------
-    /** Freeze animation frame advancement (used during upgrade selection). */
-    public void setAnimationPaused(boolean paused) {
-        this.animationPaused = paused;
-    }
-
-    public boolean isAnimationPaused() {
-        return animationPaused;
-    }
+    public void setAnimationPaused(boolean paused) { this.animationPaused = paused; }
+    public boolean isAnimationPaused() { return animationPaused; }
 
     // -------------------- Attack lock --------------------
     public void startAttackLock(float durationSeconds) {
         if (durationSeconds <= 0f) return;
-
         lockedFacing = facing;
-
-        if (durationSeconds > attackLockTimer) {
-            attackLockTimer = durationSeconds;
-        }
+        if (durationSeconds > attackLockTimer) attackLockTimer = durationSeconds;
     }
 
-    public boolean isAttackLocked() {
-        return attackLockTimer > 0f;
-    }
+    public boolean isAttackLocked() { return attackLockTimer > 0f; }
 
     public void startAttackLock(float durationSeconds, Facing lockTo) {
         if (durationSeconds <= 0f) return;
@@ -132,29 +120,26 @@ public class Player extends Entity {
             lockedFacing = facing;
         }
 
-        if (durationSeconds > attackLockTimer) {
-            attackLockTimer = durationSeconds;
-        }
+        if (durationSeconds > attackLockTimer) attackLockTimer = durationSeconds;
     }
 
     // -------------------- Update --------------------
     public void update(Room room, int tileSize) {
         float delta = Gdx.graphics.getDeltaTime();
+        if (room == null) return;
 
-        // Dash movement (kept as-is)
+        // Dash movement
         if (isDashing()) {
             float oldX = getX();
             float oldY = getY();
 
             setX(oldX + dashVX * delta);
-            if (collidesWithRoom(room.getRoom(), tileSize, room.getRoomWidth(),
-                room.getRoomHeight())) setX(oldX);
+            if (collidesWithRoom(room, tileSize)) setX(oldX);
 
             setY(oldY + dashVY * delta);
-            if (collidesWithRoom(room.getRoom(), tileSize, room.getRoomWidth(),
-                room.getRoomHeight())) setY(oldY);
+            if (collidesWithRoom(room, tileSize)) setY(oldY);
 
-            clampToScreen();
+            clampToRoom(room); // <- important now that room size isn't always screen size
             return;
         }
 
@@ -173,11 +158,9 @@ public class Player extends Entity {
             else if (down && !up) facing = Facing.DOWN;
             else if (up && !down) facing = Facing.UP;
         } else {
-            // keep pinned
             facing = lockedFacing;
         }
 
-        // Movement (you can still move while attack locked if you want)
         if (left)  moveX -= getSpeed() * delta;
         if (right) moveX += getSpeed() * delta;
         if (down)  moveY -= getSpeed() * delta;
@@ -186,21 +169,19 @@ public class Player extends Entity {
         float oldX = getX();
         float oldY = getY();
 
+        // X axis
         setX(oldX + moveX);
-        if (collidesWithRoom(room.getRoom(), tileSize, room.getRoomWidth(), room.getRoomHeight())) {
-            setX(oldX);
-        }
+        if (collidesWithRoom(room, tileSize)) setX(oldX);
 
+        // Y axis
         setY(oldY + moveY);
-        if (collidesWithRoom(room.getRoom(), tileSize, room.getRoomWidth(), room.getRoomHeight())) {
-            setY(oldY);
-        }
+        if (collidesWithRoom(room, tileSize)) setY(oldY);
+
+        clampToRoom(room);
 
         boolean newMoving = (getX() != oldX) || (getY() != oldY);
         isMoving = newMoving;
 
-        // While attacking, we *force* idle visuals (no running animation),
-        // so the "visual moving state" is idle during attack.
         boolean visualMoving = isMoving && !isAttackLocked();
 
         boolean stateChanged =
@@ -220,14 +201,12 @@ public class Player extends Entity {
 
     // -------------------- Frame selection --------------------
     private ArrayList<TextureRegion> getFramesForFacing(boolean visualMoving) {
-        // If attack locked, always return IDLE frames (no run/walk animation)
         if (!visualMoving) {
             if (facing == Facing.UP) return upIdleFrames;
             if (facing == Facing.LEFT || facing == Facing.RIGHT) return rightIdleFrames;
             return downIdleFrames;
         }
 
-        // Running frames
         if (facing == Facing.UP) return upRunFrames;
         if (facing == Facing.LEFT || facing == Facing.RIGHT) return rightRunFrames;
         return downRunFrames;
@@ -235,14 +214,12 @@ public class Player extends Entity {
 
     // -------------------- Draw --------------------
     public void draw(SpriteBatch spriteBatch, float delta) {
-        // Determine what animation set we should show
-        boolean visualMoving = isMoving && !isAttackLocked(); // <-- key rule
+        boolean visualMoving = isMoving && !isAttackLocked();
         ArrayList<TextureRegion> frames = getFramesForFacing(visualMoving);
         if (frames.isEmpty()) return;
 
         float frameTime = visualMoving ? RUN_FRAME_TIME : IDLE_FRAME_TIME;
 
-        // Advance animation unless paused (upgrade selection)
         if (!animationPaused) {
             animTimer += delta;
             while (animTimer >= frameTime) {
@@ -261,7 +238,6 @@ public class Player extends Entity {
         float drawW = 32f;
         float drawH = 48f;
 
-        // Mirror for LEFT without mutating TextureRegion
         boolean flipX = (facing == Facing.LEFT);
         float x = flipX ? (getX() + drawW) : getX();
         float w = flipX ? -drawW : drawW;
@@ -279,13 +255,11 @@ public class Player extends Entity {
         if (dashCooldown > 0f) dashCooldown -= delta;
         if (dashTimer > 0f) dashTimer -= delta;
 
-        // Attack-facing lock timer
         if (attackLockTimer > 0f) {
             attackLockTimer -= delta;
             if (attackLockTimer <= 0f) {
                 attackLockTimer = 0f;
             } else {
-                // Keep facing pinned during lock
                 facing = lockedFacing;
             }
         }
@@ -317,37 +291,117 @@ public class Player extends Entity {
         health += amount;
     }
 
-    // -------------------- Collision --------------------
-    private boolean collidesWithRoom(int[][] grid, int tileSize, int roomW, int roomH) {
-        int leftTile   = (int)(getX() / tileSize);
-        int rightTile  = (int)((getX() + getWidth()) / tileSize);
-        int bottomTile = (int)(getY() / tileSize);
-        int topTile    = (int)((getY() + getHeight()) / tileSize);
+    // -------------------- Collision (NEW SYSTEM) --------------------
+    private boolean collidesWithRoom(Room room) {
+        if (room == null) return false;
 
-        leftTile   = clamp(leftTile, 0, roomW - 1);
-        rightTile  = clamp(rightTile, 0, roomW - 1);
-        bottomTile = clamp(bottomTile, 0, roomH - 1);
-        topTile    = clamp(topTile, 0, roomH - 1);
+        int[][] col = room.getCollisions();
+        if (col == null) return false;
 
-        for (int ty = bottomTile; ty <= topTile; ty++) {
-            for (int tx = leftTile; tx <= rightTile; tx++) {
-                int t = grid[ty][tx];
-                if (t == 1 || t == 2 || t == 3 || t == 4 || t == 5) {
-                    return true;
-                }
+        final int tileSize = room.getTileSize();
+        final int roomW = room.getRoomWidth();
+        final int roomH = room.getRoomHeight();
+
+        float x = getX();
+        float y = getY();
+        float w = getWidth();
+        float h = getHeight();
+
+        // sample covered tiles (use -1 so exact-edge doesn't spill into next tile)
+        int left   = (int)Math.floor(x / tileSize);
+        int right  = (int)Math.floor((x + w - 1f) / tileSize);
+        int bottom = (int)Math.floor(y / tileSize);
+        int top    = (int)Math.floor((y + h - 1f) / tileSize);
+
+        // clamp to grid bounds
+        left   = clamp(left,   0, roomW - 1);
+        right  = clamp(right,  0, roomW - 1);
+        bottom = clamp(bottom, 0, roomH - 1);
+        top    = clamp(top,    0, roomH - 1);
+
+        for (int ty = bottom; ty <= top; ty++) {
+            int srcY = (roomH - 1) - ty; // ✅ match the renderer’s flip
+            for (int tx = left; tx <= right; tx++) {
+                if (isSolid(col, tx, srcY)) return true;
             }
         }
         return false;
+    }
+
+    private boolean collidesWithRoom(Room room, int tileSize) {
+        if (room == null) return false;
+
+        int[][] col = room.getCollisions(); // must exist in Room
+        if (col == null) return false;
+
+        int roomW = room.getRoomWidth();
+        int roomH = room.getRoomHeight();
+
+        float x = getX();
+        float y = getY();
+        float w = getWidth();
+        float h = getHeight();
+
+        int left   = (int)Math.floor(x / tileSize);
+        int right  = (int)Math.floor((x + w - 1f) / tileSize);
+        int bottom = (int)Math.floor(y / tileSize);
+        int top    = (int)Math.floor((y + h - 1f) / tileSize);
+
+        left   = clamp(left,   0, roomW - 1);
+        right  = clamp(right,  0, roomW - 1);
+        bottom = clamp(bottom, 0, roomH - 1);
+        top    = clamp(top,    0, roomH - 1);
+
+        // ✅ If your rendering flips Y, collision should too:
+        for (int ty = bottom; ty <= top; ty++) {
+            int srcY = (roomH - 1) - ty;
+            for (int tx = left; tx <= right; tx++) {
+                if (col[srcY][tx] == 76) return true; // 76 = solid
+            }
+        }
+        return false;
+    }
+
+
+    private boolean isSolid(int[][] col, int tx, int ty) {
+        // safe bounds (should already be clamped, but cheap + robust)
+        if (ty < 0 || ty >= col.length) return true;
+        if (tx < 0 || tx >= col[ty].length) return true;
+
+        int v = col[ty][tx];
+
+        // Your collision layer uses 76 for walls, 0 for empty.
+        return v == 76;
     }
 
     private static int clamp(int v, int lo, int hi) {
         return Math.max(lo, Math.min(hi, v));
     }
 
+    private boolean isSolid(int[][] col, int roomW, int roomH, int tx, int ty) {
+        // out of bounds = solid
+        if (tx < 0 || tx >= roomW || ty < 0 || ty >= roomH) return true;
+        return col[ty][tx] == COLLISION_SOLID;
+    }
+
+    /**
+     * Clamp player to the room bounds (not screen bounds).
+     * This matters now that rooms can be different sizes / camera can move.
+     */
+    public void clampToRoom(Room room) {
+        float maxX = room.getRoomWidth() * room.getTileSize() - getWidth();
+        float maxY = room.getRoomHeight() * room.getTileSize() - getHeight();
+
+        if (getX() < 0) setX(0);
+        if (getY() < 0) setY(0);
+        if (getX() > maxX) setX(maxX);
+        if (getY() > maxY) setY(maxY);
+    }
+
     // -------------------- Facing setter --------------------
     public void setFacing(Facing facing) {
         if (facing == null) return;
-        if (isAttackLocked()) return; // ignore during attack animation
+        if (isAttackLocked()) return;
         this.facing = facing;
     }
 
