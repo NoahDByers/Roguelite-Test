@@ -60,12 +60,15 @@ public class Main extends ApplicationAdapter {
     // World textures (tiles)
     private Texture cemeteryTiles;
     private Texture cemeteryFloor;
+    private Texture dungeonTileSheet;
 
     // Weapon textures
     private Texture swordSheet;
     private TextureRegion broadswordRegion;
     private ArrayList<TextureRegion> swordSwing;
     private Texture swordSwingSheet;
+    private ArrayList<TextureRegion> dungeonTiles = new ArrayList<>();
+    ArrayList<Room> rooms = new ArrayList<>();
 
     // Weapon objects
     private Weapon broadsword;
@@ -143,6 +146,7 @@ public class Main extends ApplicationAdapter {
 
         cemeteryTiles = new Texture("cemetery/cemeteryTiles.png");
         cemeteryFloor = new Texture("cemetery/cemeteryFloor.png");
+        dungeonTileSheet = new Texture("tilesets/dungeonTileset.png");
 
         // Audio
         audio = new AudioManager();
@@ -158,6 +162,12 @@ public class Main extends ApplicationAdapter {
         // Extract UI regions
         uiBannerRegion = new TextureRegion(uiBanners, 16, 16, 192, 275);
         flagBannerRegion = new TextureRegion(generalAssets, 20, 292, 111, 32);
+
+        for(int y = 0; y < 10; y++) {
+            for (int x = 0; x < 10; x++) {
+                dungeonTiles.add(new TextureRegion(dungeonTileSheet, x * 16, y * 16, 16, 16));
+            }
+        }
 
         // Button textures
         ArrayList<TextureRegion> marketButtonTextures = new ArrayList<>();
@@ -195,6 +205,8 @@ public class Main extends ApplicationAdapter {
             0.5f, 64, 64, 1, broadswordRegion, swordSwing);
 
         // Do NOT create the world here — only when starting run
+        InitializeRooms createTool = new InitializeRooms(dungeonTiles);
+        rooms = createTool.getRooms();
     }
 
     /** Build a fresh tileset list using already-loaded textures. */
@@ -229,7 +241,7 @@ public class Main extends ApplicationAdapter {
             world = null;
         }
 
-        room = new Room(32, 20, 15, starterRoom, makeCemeteryTileset());
+        room = rooms.get(0);
         room.setViewport(viewport);
 
         player = new Player(100, 100, 170, 32, 32);

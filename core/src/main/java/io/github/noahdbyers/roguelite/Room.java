@@ -8,22 +8,40 @@ import com.badlogic.gdx.utils.viewport.Viewport;
 import java.util.ArrayList;
 
 public class Room {
+
     private int tileSize = 32;
     private int roomWidth = 20;   // tiles
     private int roomHeight = 15;  // tiles
 
-    private int[][] room;
+    // Draw layer (what you render)
+    private int[][] draw;
+
+    // Collision layer (what blocks movement)
+    private int[][] collisions;
+
+    // Tile textures (index -> TextureRegion)
     private ArrayList<TextureRegion> tileSet;
 
     // Needed for correct mouse->world conversion with FitViewport
     private Viewport viewport;
 
-    public Room(int tileSize, int roomWidth, int roomHeight, int[][] room, ArrayList<TextureRegion> tileSet) {
+    public Room(int tileSize,
+                int roomWidth,
+                int roomHeight,
+                int[][] draw,
+                int[][] collisions,
+                ArrayList<TextureRegion> tileSet) {
+
         this.tileSize = tileSize;
         this.roomWidth = roomWidth;
         this.roomHeight = roomHeight;
-        this.room = room;
+
+        this.draw = draw;
+        this.collisions = collisions;
         this.tileSet = tileSet;
+
+        // Optional safety: if provided grids don’t match given dimensions,
+        // you can still run, but out-of-bounds checks will protect you.
     }
 
     /** Set once from Main after you create the viewport (and again if you recreate Room). */
@@ -51,28 +69,62 @@ public class Room {
         }
 
         Vector2 screen = new Vector2(Gdx.input.getX(), Gdx.input.getY());
-        viewport.unproject(screen); // modifies screen into world coords
+        viewport.unproject(screen);
         return screen;
     }
 
     // -------------------- Tile access --------------------
 
+    /**
+     * Backwards-compatible: returns the DRAW tile index at (x,y).
+     * This keeps existing rendering code working:
+     *   room.getTextureRegion(room.getTile(x,y))
+     */
     public int getTile(int x, int y) {
-        if (!inBounds(x, y)) return 1; // treat out-of-bounds as wall
-        return room[y][x];
+        if (!inBounds(x, y)) return 0;
+        if (draw == null) return 0;
+        if (y >= draw.length || x >= draw[y].length) return 0;
+        return draw[y][x];
     }
 
+    /**
+     * Backwards-compatible: GameWorld currently calls room.getRoom() for collision checks.
+     * So we return the COLLISION grid here.
+     */
     public int[][] getRoom() {
-        return room;
+        return collisions;
     }
 
-    public void setTile(int x, int y, int newValue) {
+    /** Explicit getter for draw grid (useful for debugging or future features). */
+    public int[][] getDrawGrid() {
+        return draw;
+    }
+
+    /** Explicit getter for collision grid. */
+    public int[][] getCollisionGrid() {
+        return collisions;
+    }
+
+    public void setDrawTile(int x, int y, int newValue) {
         if (!inBounds(x, y)) return;
-        room[y][x] = newValue;
+        if (draw == null) return;
+        if (y >= draw.length || x >= draw[y].length) return;
+        draw[y][x] = newValue;
     }
 
-    public void setRoom(int[][] newRoom) {
-        this.room = newRoom;
+    public void setCollisionTile(int x, int y, int newValue) {
+        if (!inBounds(x, y)) return;
+        if (collisions == null) return;
+        if (y >= collisions.length || x >= collisions[y].length) return;
+        collisions[y][x] = newValue;
+    }
+
+    public void setDrawGrid(int[][] newDraw) {
+        this.draw = newDraw;
+    }
+
+    public void setCollisionGrid(int[][] newCollisions) {
+        this.collisions = newCollisions;
     }
 
     public int getTileSize() {
@@ -88,11 +140,27 @@ public class Room {
     }
 
     public TextureRegion getTextureRegion(int regionIndex) {
-        if (tileSet == null || regionIndex < 0 || regionIndex >= tileSet.size()) return null;
+        if (tileSet == null || tileSet.isEmpty()) return null;
+        if (regionIndex < 0 || regionIndex >= tileSet.size()) return null;
         return tileSet.get(regionIndex);
     }
 
     private boolean inBounds(int x, int y) {
         return x >= 0 && x < roomWidth && y >= 0 && y < roomHeight;
     }
+
+    public int[][] getDraw() {
+        return draw;
+    }
+
+    public int[][] getCollisions() {
+        return collisions;
+    }
+
+    /** Treat out-of-bounds as solid to prevent leaving the room. */
+    public boolean isSolidTile(int tx, int ty) {
+        if (tx < 0 || tx >= roomWidth || ty < 0 || ty >= roomHeight) return true;
+        return collisions != null && collisions[ty][tx] == 76;
+    }
+
 }

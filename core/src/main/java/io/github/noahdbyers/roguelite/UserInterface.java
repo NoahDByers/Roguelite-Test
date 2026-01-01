@@ -415,12 +415,26 @@ public class UserInterface {
         if (room == null) return;
 
         float ts = room.getTileSize();
-        for (int y = 0; y < room.getRoomHeight(); y++) {
-            for (int x = 0; x < room.getRoomWidth(); x++) {
-                spriteBatch.draw(room.getTextureRegion(room.getTile(x, y)), x * ts, y * ts, ts, ts);
+        int h = room.getRoomHeight();
+        int w = room.getRoomWidth();
+
+        for (int y = 0; y < h; y++) {
+            int srcY = (h - 1) - y; // ✅ flip: draw bottom row from the last row in the data
+
+            for (int x = 0; x < w; x++) {
+                int tileId = room.getTile(x, srcY);
+
+                // If your JSON uses 1-based tile IDs (1..N), convert to 0-based (0..N-1)
+                int regionIndex = tileId - 1;
+
+                TextureRegion region = room.getTextureRegion(regionIndex);
+                if (region == null) continue;
+
+                spriteBatch.draw(region, x * ts, y * ts, ts, ts);
             }
         }
     }
+
 
     // ----------------------------
     // World drawing (sprites)
