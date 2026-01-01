@@ -345,39 +345,98 @@ public class GameWorld {
         if (player == null) ensurePlayer();
         if (room == null) return;
 
-        int tileSize = room.getTileSize();
-        float roomPixelW = room.getRoomWidth() * tileSize;
-        float roomPixelH = room.getRoomHeight() * tileSize;
+        final int tileSize = room.getTileSize();
+        final float roomPixelW = room.getRoomWidth() * tileSize;
+        final float roomPixelH = room.getRoomHeight() * tileSize;
 
+        // Zombie hitbox
         final float hbW = 28f;
         final float hbH = 58f;
 
-        for (int tries = 0; tries < 200; tries++) {
+        // Keep away from player
+        final float minDist = 120f;
+        final float minDist2 = minDist * minDist;
+
+        // How much "breathing room" around walls we require
+        // (prevents spawning hugging a wall and instantly colliding)
+        final float padding = 2f;
+
+        // Random tries
+        for (int tries = 0; tries < 400; tries++) {
             float x = rng.nextFloat() * (roomPixelW - hbW);
             float y = rng.nextFloat() * (roomPixelH - hbH);
 
-            float px = player.getX() + player.getWidth() / 2f;
-            float py = player.getY() + player.getHeight() / 2f;
-            float ex = x + hbW / 2f;
-            float ey = y + hbH / 2f;
+            // Distance gate
+            float px = player.getX() + player.getWidth() * 0.5f;
+            float py = player.getY() + player.getHeight() * 0.5f;
+            float ex = x + hbW * 0.5f;
+            float ey = y + hbH * 0.5f;
 
             float dx = ex - px;
             float dy = ey - py;
+            if (dx * dx + dy * dy < minDist2) continue;
 
-            float minDist = 120f;
-            if (dx * dx + dy * dy < minDist * minDist) continue;
-
-            // ✅ NOW uses collision layer (76 = solid)
-            if (rectHitsWall(x, y, hbW, hbH)) continue;
+            // Collision gate (uses collision layer: 76 = solid)
+            if (rectHitsCollision(room, x + padding, y + padding, hbW - padding * 2f, hbH - padding * 2f)) {
+                continue;
+            }
 
             enemies.add(new Zombie(x, y, speed, hbW, hbH, 3));
             return;
         }
 
-        float[] open = findFirstOpenSpotRect(hbW, hbH, 120f);
-        if (open != null) enemies.add(new Zombie(open[0], open[1], speed, hbW, hbH, 3));
+        // Fallback: deterministic search
+        float[] open = findFirstOpenSpotRect(hbW, hbH, minDist);
+        if (open != null) {
+            // Final safety check
+            if (!rectHitsCollision(room, open[0], open[1], hbW, hbH)) {
+                enemies.add(new Zombie(open[0], open[1], speed, hbW, hbH, 3));
+            }
+        }
     }
 
+    /**
+     * Checks the room COLLISION LAYER only.
+     * Treats value 76 as solid (collision).
+     *
+     * IMPORTANT: This maps world Y -> collision array Y using flip:
+     * collisionRow = (roomH - 1) - worldTileY
+     * because your rendering uses that same flip to match visuals.
+     */
+    private boolean rectHitsCollision(Room room, float x, float y, float w, float h) {
+        int[][] col;
+        try { col = room.getCollisions(); }
+        catch (Throwable t) { col = null; }
+
+        if (col == null) return false;
+
+        final int tileSize = room.getTileSize();
+        final int roomW = room.getRoomWidth();
+        final int roomH = room.getRoomHeight();
+
+        // Compute covered tile range (inclusive)
+        int left   = (int)Math.floor(x / tileSize);
+        int right  = (int)Math.floor((x + w - 1f) / tileSize);
+        int bottom = (int)Math.floor(y / tileSize);
+        int top    = (int)Math.floor((y + h - 1f) / tileSize);
+
+        // Clamp to bounds
+        left   = clamp(left,   0, roomW - 1);
+        right  = clamp(right,  0, roomW - 1);
+        bottom = clamp(bottom, 0, roomH - 1);
+        top    = clamp(top,    0, roomH - 1);
+
+        for (int ty = bottom; ty <= top; ty++) {
+            // WORLD tile Y -> collision array Y
+            int cy = (roomH - 1) - ty;
+
+            for (int tx = left; tx <= right; tx++) {
+                if (col[cy][tx] == 76) return true;
+            }
+        }
+
+        return false;
+    }
     // -------------------- Collision helpers (FIXED) --------------------
     private boolean rectHitsWall(float x, float y, float w, float h) {
         if (room == null) return true;
@@ -609,7 +668,7 @@ public class GameWorld {
                     enemy.takeDamage(hb.damage);
                     alreadyHit.add(enemy);
 
-                    damagePopups.add(new DamagePopup(enemy.getX(), enemy.getY(), hb.damage));
+                    damagePopups.add(new DamagePopup(enemy.getX(), enemy.getY() + enemy.getHeight(), hb.damage));
                     enemy.takeKnockback(hb.dir.x, hb.dir.y, 400f);
 
                     if (enemy.isDead()) {
@@ -634,7 +693,6 @@ public class GameWorld {
                     // Gate screen shake once per attack/hitbox
                     if (!shakeUsed) {
                         if (shake != null) shake.addShake(HIT_SHAKE_INTENSITY, HIT_SHAKE_DURATION);
-                        System.out.println("SHAKE!");
                         shakeUsed = true;
                         hitboxShakeUsed.put(hb, true);
                     }

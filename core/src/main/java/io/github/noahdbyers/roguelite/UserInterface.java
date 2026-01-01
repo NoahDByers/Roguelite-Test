@@ -14,10 +14,13 @@ import com.badlogic.gdx.math.Matrix4;
 import com.badlogic.gdx.math.Vector2;
 import com.badlogic.gdx.utils.Align;
 import com.badlogic.gdx.math.Vector3;
+import com.badlogic.gdx.utils.viewport.Viewport;
 
 import java.util.ArrayList;
 
 public class UserInterface {
+    private final Viewport viewport;
+
     private final float width;
     private final float height;
 
@@ -104,13 +107,14 @@ public class UserInterface {
                          GameWorld world,
                          ShapeRenderer shapeRenderer,
                          ArrayList<Entity> entities,
-                         SpriteBatch spriteBatch) {
+                         SpriteBatch spriteBatch, Viewport viewport) {
         this.width = width;
         this.height = height;
         this.world = world;
         this.shapeRenderer = shapeRenderer;
         this.entities = entities;
         this.spriteBatch = spriteBatch;
+        this.viewport = viewport;
 
         font.getData().setScale(1.0f);
         font.setColor(Color.WHITE);
@@ -161,11 +165,6 @@ public class UserInterface {
         // ----------------------------
         shapeRenderer.setProjectionMatrix(savedWorldProjection);
         shapeRenderer.setTransformMatrix(identityTransform);
-
-        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
-        drawBulletsSafe();
-        shapeRenderer.end();
-
         // ----------------------------
         // 3) UI (SpriteBatch): HUD + upgrade menu + game over
         // Switch to SCREEN SPACE so UI doesn’t move/zoom with the camera.
@@ -177,7 +176,7 @@ public class UserInterface {
 
         if (!world.isChoosingUpgrade()) {
             drawHud();
-            drawDamagePopupsScreenSpace(); // convert world->screen
+            drawDamagePopupsScreenSpace();
         }
 
         if (world.isChoosingUpgrade()) {
@@ -526,20 +525,20 @@ public class UserInterface {
     // Damage popups: WORLD -> SCREEN
     // ----------------------------
     private void drawDamagePopupsScreenSpace() {
-        // We are in screenProjection (UI space). Convert popup world positions to screen pixels.
+        if (viewport == null) return;
+
         for (DamagePopup p : world.getDamagePopups()) {
             if (p == null) continue;
 
+            // world -> screen pixels
             tmpV3.set(p.x, p.y, 0f);
+            viewport.project(tmpV3); // now tmpV3.x/y are screen pixels (origin bottom-left)
 
-            // Project using the world matrix (camera.combined) we saved earlier
-            tmpV3.prj(savedWorldProjection);
-
-            // After prj(), x/y are in SCREEN PIXELS already (0..viewportWidth/Height),
-            // as long as the matrix came from your camera/viewport pipeline.
+            // draw in UI space (screenProjection is 0..width,0..height)
             font.draw(spriteBatch, "" + p.amount, tmpV3.x, tmpV3.y);
         }
     }
+
 
     // ----------------------------
     // Bars / stats

@@ -301,7 +301,7 @@ public class Main extends ApplicationAdapter {
         // public void setScreenShake(ScreenShake s) { this.shake = s; }
         world.setScreenShake(this::addShake);
 
-        UI = new UserInterface(VIRTUAL_WIDTH, VIRTUAL_HEIGHT, world, shapeRenderer, new ArrayList<>(), spriteBatch);
+        UI = new UserInterface(VIRTUAL_WIDTH, VIRTUAL_HEIGHT, world, shapeRenderer, new ArrayList<>(), spriteBatch, viewport);
     }
 
     /**
