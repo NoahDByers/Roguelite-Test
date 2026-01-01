@@ -10,9 +10,10 @@ import com.badlogic.gdx.graphics.g2d.GlyphLayout;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.g2d.TextureRegion;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
-import com.badlogic.gdx.utils.Align;
-import com.badlogic.gdx.math.Vector2;
 import com.badlogic.gdx.math.Matrix4;
+import com.badlogic.gdx.math.Vector2;
+import com.badlogic.gdx.utils.Align;
+import com.badlogic.gdx.math.Vector3;
 
 import java.util.ArrayList;
 
@@ -82,16 +83,22 @@ public class UserInterface {
     private boolean wasChoosingUpgrade = false;
     private int lastOfferedSignature = 0;
 
-    // Reused vectors to avoid per-frame allocations
+    // Reused vectors
     private final Vector2 tmpMouseWorld = new Vector2();
+    private final Vector2 tmpProject = new Vector2();
+    private final Vector3 tmpV3 = new Vector3();
+
 
     private float uiTime = 0f;
 
     // ----------------------------
-    // NEW: screen-space projection for HUD/menus
+    // Screen-space projection for HUD/menus
     // ----------------------------
     private final Matrix4 screenProjection = new Matrix4();
     private final Matrix4 identityTransform = new Matrix4();
+
+    // Save/restore world projection so we don't break camera following next frame
+    private final Matrix4 savedWorldProjection = new Matrix4();
 
     public UserInterface(float width, float height,
                          GameWorld world,
@@ -114,21 +121,28 @@ public class UserInterface {
         whitePixel = new Texture(pm);
         pm.dispose();
 
+        // Screen-space: (0..width, 0..height)
         screenProjection.setToOrtho2D(0f, 0f, width, height);
         identityTransform.idt();
     }
 
-    /** Call once per frame. */
+    /** Call once per frame AFTER Main has set spriteBatch projection to camera.combined. */
     public void drawQueue() {
         if (world == null) return;
 
         float delta = Gdx.graphics.getDeltaTime();
         uiTime += delta;
 
+        // Save whatever Main set (should be camera.combined)
+        savedWorldProjection.set(spriteBatch.getProjectionMatrix());
+
         // ----------------------------
         // 1) WORLD (SpriteBatch): tiles + sprites + weapon
-        // Uses camera.combined (already set by Main before calling UI.drawQueue()).
+        // Must use CAMERA projection so the camera follows player.
         // ----------------------------
+        spriteBatch.setProjectionMatrix(savedWorldProjection);
+        spriteBatch.setTransformMatrix(identityTransform);
+
         spriteBatch.begin();
         drawWorldTilesSafe();
         drawSpritesSafe(delta);
@@ -143,8 +157,11 @@ public class UserInterface {
 
         // ----------------------------
         // 2) WORLD (ShapeRenderer): bullets
-        // Uses camera.combined (already set by Main)
+        // Must also use camera projection.
         // ----------------------------
+        shapeRenderer.setProjectionMatrix(savedWorldProjection);
+        shapeRenderer.setTransformMatrix(identityTransform);
+
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
         drawBulletsSafe();
         shapeRenderer.end();
@@ -160,7 +177,7 @@ public class UserInterface {
 
         if (!world.isChoosingUpgrade()) {
             drawHud();
-            drawDamagePopups(); // drawn in world space? no — we’ll convert below using camera+viewport elsewhere if needed
+            drawDamagePopupsScreenSpace(); // convert world->screen
         }
 
         if (world.isChoosingUpgrade()) {
@@ -185,13 +202,13 @@ public class UserInterface {
 
         spriteBatch.end();
 
+        // IMPORTANT: restore world projection so other code doesn't get "stuck" in UI projection
+        spriteBatch.setProjectionMatrix(savedWorldProjection);
+        spriteBatch.setTransformMatrix(identityTransform);
+
         wasChoosingUpgrade = world.isChoosingUpgrade();
     }
 
-    /**
-     * ✅ FIX: never save spriteBatch.getColor() as a reference.
-     * Save RGBA floats, then restore them.
-     */
     private void drawDimOverlay(float alpha) {
         Color c = spriteBatch.getColor();
         float r = c.r, g = c.g, b = c.b, a = c.a;
@@ -225,9 +242,9 @@ public class UserInterface {
         float startX = (width - totalW) / 2f;
         float baseY = height * 0.56f - star * 0.5f;
 
-        // IMPORTANT: for UI hover, use SCREEN mouse coords (not world aim coords)
+        // Screen mouse (bottom-left origin)
         float mx = Gdx.input.getX();
-        float my = (height - Gdx.input.getY()); // screen-space origin at bottom-left
+        float my = height - Gdx.input.getY();
 
         int hovered = -1;
         for (int i = 0; i < UPGRADE_COUNT; i++) {
@@ -506,6 +523,25 @@ public class UserInterface {
     }
 
     // ----------------------------
+    // Damage popups: WORLD -> SCREEN
+    // ----------------------------
+    private void drawDamagePopupsScreenSpace() {
+        // We are in screenProjection (UI space). Convert popup world positions to screen pixels.
+        for (DamagePopup p : world.getDamagePopups()) {
+            if (p == null) continue;
+
+            tmpV3.set(p.x, p.y, 0f);
+
+            // Project using the world matrix (camera.combined) we saved earlier
+            tmpV3.prj(savedWorldProjection);
+
+            // After prj(), x/y are in SCREEN PIXELS already (0..viewportWidth/Height),
+            // as long as the matrix came from your camera/viewport pipeline.
+            font.draw(spriteBatch, "" + p.amount, tmpV3.x, tmpV3.y);
+        }
+    }
+
+    // ----------------------------
     // Bars / stats
     // ----------------------------
     private void drawHealthBar(Texture icon, Texture frame, Texture fill, float x, float y, float percent) {
@@ -574,15 +610,6 @@ public class UserInterface {
         float iconSize = 65;
         spriteBatch.draw(icon, x + 5, y - iconSize + 3, iconSize + 100, iconSize);
         font.draw(spriteBatch, value, x + iconSize - 10, y - iconSize / 2 + 8);
-    }
-
-    private void drawDamagePopups() {
-        // If you want these in screen space, you must project world->screen using viewport+camera.
-        // For now, keep as-is (they will appear in screen coords).
-        for (DamagePopup p : world.getDamagePopups()) {
-            if (p == null) continue;
-            font.draw(spriteBatch, "" + p.amount, p.x, p.y);
-        }
     }
 
     public SpriteBatch getSpriteBatch() {
