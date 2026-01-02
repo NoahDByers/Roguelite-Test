@@ -19,8 +19,6 @@ public class GameWorld {
     private SpriteBatch spriteBatch;
     private Player player;
     private final ArrayList<Enemy> enemies = new ArrayList<>();
-    private final ArrayList<Bullet> bullets = new ArrayList<>();
-
     private boolean gameOver = false;
     private int enemiesKilled = 0;
     private int coins = 0;
@@ -175,11 +173,8 @@ public class GameWorld {
     public Room getRoom() { return room; }
     public Player getPlayer() { return player; }
     public ArrayList<Enemy> getEnemies() { return enemies; }
-    public ArrayList<Bullet> getBullets() { return bullets; }
-
     public boolean isGameOver() { return gameOver; }
     public boolean isChoosingUpgrade() { return choosingUpgrade; }
-
     public int getEnemiesKilled() { return enemiesKilled; }
     public int getWave() { return wave; }
 
@@ -277,7 +272,6 @@ public class GameWorld {
         ensurePlayerFresh();
 
         enemies.clear();
-        bullets.clear();
 
         meleeHitboxes.clear();
         hitboxHits.clear();
