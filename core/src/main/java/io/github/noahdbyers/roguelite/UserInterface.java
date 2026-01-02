@@ -19,8 +19,14 @@ import com.badlogic.gdx.utils.viewport.Viewport;
 import java.util.ArrayList;
 
 public class UserInterface {
+    // World viewport (the one used for camera/gameplay rendering)
     private final Viewport viewport;
+    // UI viewport (FitViewport / ScreenViewport used for HUD & upgrade menu)
+    // This is what fixes fullscreen mouse offset/letterboxing issues.
+    private Viewport uiViewport;
+    private final Vector2 uiMouse = new Vector2();
 
+    // Note: keep these as the VIRTUAL ui size (not the window size).
     private final float width;
     private final float height;
 
@@ -33,10 +39,17 @@ public class UserInterface {
     private final GlyphLayout layout = new GlyphLayout();
 
     // Fallback card art
-    private final Texture fallbackCardTexture = new Texture("ui/upgrade_card.png");
+    private final Texture fallbackCardTexture = Utility.loadNearest("ui/upgrade_card.png");
 
     // 1x1 white pixel for overlays
     private final Texture whitePixel;
+    // ----------------------------
+    // Upgrade input delay (prevents accidental selection)
+    // ----------------------------
+    private static final float UPGRADE_INPUT_DELAY = 0.25f; // seconds
+    private float upgradeInputTimer = 0f;
+    private boolean prevChoosingUpgrade = false;
+
 
     // Visual highlight only
     private int selectedUpgradeIndex = -1;
@@ -45,17 +58,17 @@ public class UserInterface {
     private final Color bulletColor = new Color(1f, 1f, 0f, 1f);
 
     // UI textures
-    private final Texture uiBarBg = new Texture("ui/BarIcon.png");
-    private final Texture uiBarManaBg = new Texture("ui/ManaBarIcon.png");
-    private final Texture uiBarHealthFill = new Texture("ui/FullHPBar.png");
-    private final Texture uiBarManaFill = new Texture("ui/FullManaBar.png");
+    private final Texture uiBarBg = Utility.loadNearest("ui/BarIcon.png");
+    private final Texture uiBarManaBg = Utility.loadNearest("ui/ManaBarIcon.png");
+    private final Texture uiBarHealthFill = Utility.loadNearest("ui/FullHPBar.png");
+    private final Texture uiBarManaFill = Utility.loadNearest("ui/FullManaBar.png");
 
-    private final Texture iconHeart = new Texture("ui/HeartIcon.png");
-    private final Texture iconMana = new Texture("ui/ManaIcon.png");
-    private final Texture iconCoin = new Texture("ui/CoinIcon.png");
-    private final Texture iconSoul = new Texture("ui/SoulIcon.png");
-    private final Texture iconKill = new Texture("ui/SkullIcon.png");
-    private final Texture iconWave = new Texture("ui/ClearIcon.png");
+    private final Texture iconHeart = Utility.loadNearest("ui/HeartIcon.png");
+    private final Texture iconMana = Utility.loadNearest("ui/ManaIcon.png");
+    private final Texture iconCoin = Utility.loadNearest("ui/CoinIcon.png");
+    private final Texture iconSoul = Utility.loadNearest("ui/SoulIcon.png");
+    private final Texture iconKill = Utility.loadNearest("ui/SkullIcon.png");
+    private final Texture iconWave = Utility.loadNearest("ui/ClearIcon.png");
 
     // ----------------------------
     // Upgrade layout tuning
@@ -88,9 +101,7 @@ public class UserInterface {
 
     // Reused vectors
     private final Vector2 tmpMouseWorld = new Vector2();
-    private final Vector2 tmpProject = new Vector2();
     private final Vector3 tmpV3 = new Vector3();
-
 
     private float uiTime = 0f;
 
@@ -107,7 +118,8 @@ public class UserInterface {
                          GameWorld world,
                          ShapeRenderer shapeRenderer,
                          ArrayList<Entity> entities,
-                         SpriteBatch spriteBatch, Viewport viewport) {
+                         SpriteBatch spriteBatch,
+                         Viewport viewport) {
         this.width = width;
         this.height = height;
         this.world = world;
@@ -125,9 +137,25 @@ public class UserInterface {
         whitePixel = new Texture(pm);
         pm.dispose();
 
-        // Screen-space: (0..width, 0..height)
+        // Screen-space: (0..width, 0..height) where width/height are your VIRTUAL size
         screenProjection.setToOrtho2D(0f, 0f, width, height);
         identityTransform.idt();
+    }
+
+    /** Provide the UI viewport from Main (the one updated in resize). */
+    public void setUiViewport(Viewport vp) {
+        this.uiViewport = vp;
+    }
+
+    /** Get mouse in UI coordinates (virtual coords), robust to fullscreen/letterboxing. */
+    private void getMouseUi(Vector2 out) {
+        out.set(Gdx.input.getX(), Gdx.input.getY());
+        if (uiViewport != null) {
+            uiViewport.unproject(out); // -> UI world coords (0..width, 0..height if FitViewport)
+        } else {
+            // Fallback: assumes no letterboxing (may be wrong in fullscreen)
+            out.set(Gdx.input.getX(), height - Gdx.input.getY());
+        }
     }
 
     /** Call once per frame AFTER Main has set spriteBatch projection to camera.combined. */
@@ -136,6 +164,19 @@ public class UserInterface {
 
         float delta = Gdx.graphics.getDeltaTime();
         uiTime += delta;
+
+        // Detect entering upgrade state and start input delay
+        boolean choosing = world.isChoosingUpgrade();
+        if (choosing && !prevChoosingUpgrade) {
+            upgradeInputTimer = UPGRADE_INPUT_DELAY;
+        }
+        prevChoosingUpgrade = choosing;
+
+        // Count down
+        if (upgradeInputTimer > 0f) {
+            upgradeInputTimer -= delta;
+            if (upgradeInputTimer < 0f) upgradeInputTimer = 0f;
+        }
 
         // Save whatever Main set (should be camera.combined)
         savedWorldProjection.set(spriteBatch.getProjectionMatrix());
@@ -165,6 +206,11 @@ public class UserInterface {
         // ----------------------------
         shapeRenderer.setProjectionMatrix(savedWorldProjection);
         shapeRenderer.setTransformMatrix(identityTransform);
+
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
+        drawBulletsSafe();
+        shapeRenderer.end();
+
         // ----------------------------
         // 3) UI (SpriteBatch): HUD + upgrade menu + game over
         // Switch to SCREEN SPACE so UI doesn’t move/zoom with the camera.
@@ -241,9 +287,10 @@ public class UserInterface {
         float startX = (width - totalW) / 2f;
         float baseY = height * 0.56f - star * 0.5f;
 
-        // Screen mouse (bottom-left origin)
-        float mx = Gdx.input.getX();
-        float my = height - Gdx.input.getY();
+        // ✅ FIX: get mouse in UI coordinates via uiViewport (works in fullscreen/letterboxing)
+        getMouseUi(uiMouse);
+        float mx = uiMouse.x;
+        float my = uiMouse.y;
 
         int hovered = -1;
         for (int i = 0; i < UPGRADE_COUNT; i++) {
@@ -257,7 +304,9 @@ public class UserInterface {
 
         selectedUpgradeIndex = hovered;
 
-        if (hovered != -1 && Gdx.input.isButtonJustPressed(Input.Buttons.LEFT)) {
+        boolean canSelect = (upgradeInputTimer <= 0f);
+
+        if (canSelect && hovered != -1 && Gdx.input.isButtonJustPressed(Input.Buttons.LEFT)) {
             world.chooseUpgrade(hovered);
             return;
         }
@@ -431,16 +480,26 @@ public class UserInterface {
         int w = room.getRoomWidth();
 
         for (int y = 0; y < h; y++) {
-            int srcY = (h - 1) - y; // flip
+            int srcY = (h - 1) - y;
 
             for (int x = 0; x < w; x++) {
-                int tileId = room.getTile(x, srcY);
-                int regionIndex = tileId - 1;
+                int tileId = room.getDrawTileWithDoors(x, srcY);
+                if (tileId <= 0) continue;
 
-                TextureRegion region = room.getTextureRegion(regionIndex);
-                if (region == null) continue;
+                TextureRegion region = room.getTextureRegion(tileId - 1);
+                if (region != null) {
+                    spriteBatch.draw(region, x * ts, y * ts, ts, ts);
+                }
 
-                spriteBatch.draw(region, x * ts, y * ts, ts, ts);
+                if (room.isDoor(x, srcY)) {
+                    int doorTileId = room.getDoorTextureID(x, srcY);
+                    if (doorTileId <= 0) continue;
+
+                    TextureRegion doorRegion = room.getTextureRegion(doorTileId - 1);
+                    if (doorRegion != null) {
+                        spriteBatch.draw(doorRegion, x * ts, y * ts, ts, ts);
+                    }
+                }
             }
         }
     }
@@ -494,6 +553,12 @@ public class UserInterface {
     }
 
     private void updateSelectionHighlight() {
+        // Don’t allow number-key selection during the delay
+        if (upgradeInputTimer > 0f) {
+            selectedUpgradeIndex = -1;
+            return;
+        }
+
         if (Gdx.input.isKeyPressed(Input.Keys.NUM_1)) selectedUpgradeIndex = 0;
         else if (Gdx.input.isKeyPressed(Input.Keys.NUM_2)) selectedUpgradeIndex = 1;
         else if (Gdx.input.isKeyPressed(Input.Keys.NUM_3)) selectedUpgradeIndex = 2;
@@ -522,23 +587,33 @@ public class UserInterface {
     }
 
     // ----------------------------
-    // Damage popups: WORLD -> SCREEN
+    // Damage popups: WORLD -> UI (screen-space)
     // ----------------------------
+    // Add at top of class (reuse to avoid alloc)
     private void drawDamagePopupsScreenSpace() {
         if (viewport == null) return;
+
+        // Convert from SCREEN PIXELS -> UI VIRTUAL UNITS (0..width, 0..height)
+        float sxToUi = width  / (float) viewport.getScreenWidth();
+        float syToUi = height / (float) viewport.getScreenHeight();
+
+        int vx = viewport.getScreenX();
+        int vy = viewport.getScreenY();
 
         for (DamagePopup p : world.getDamagePopups()) {
             if (p == null) continue;
 
-            // world -> screen pixels
+            // WORLD -> SCREEN PIXELS (absolute window coords)
             tmpV3.set(p.x, p.y, 0f);
-            viewport.project(tmpV3); // now tmpV3.x/y are screen pixels (origin bottom-left)
+            viewport.project(tmpV3);
 
-            // draw in UI space (screenProjection is 0..width,0..height)
-            font.draw(spriteBatch, "" + p.amount, tmpV3.x, tmpV3.y);
+            // SCREEN PIXELS -> UI VIRTUAL (remove letterbox offset, then scale)
+            float uiX = (tmpV3.x - vx) * sxToUi;
+            float uiY = (tmpV3.y - vy) * syToUi;
+
+            font.draw(spriteBatch, String.valueOf(p.amount), uiX, uiY);
         }
     }
-
 
     // ----------------------------
     // Bars / stats
