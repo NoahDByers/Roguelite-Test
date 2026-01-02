@@ -431,19 +431,32 @@ public class UserInterface {
         int w = room.getRoomWidth();
 
         for (int y = 0; y < h; y++) {
-            int srcY = (h - 1) - y; // flip
+            int srcY = (h - 1) - y; // data row that corresponds to on-screen y
 
             for (int x = 0; x < w; x++) {
-                int tileId = room.getTile(x, srcY);
-                int regionIndex = tileId - 1;
 
-                TextureRegion region = room.getTextureRegion(regionIndex);
+                // IMPORTANT: use srcY for data lookups
+
+                int tileId = room.getDrawTileWithDoors(x, srcY);
+                if (tileId <= 0) continue;
+                TextureRegion region = room.getTextureRegion(tileId - 1);
                 if (region == null) continue;
-
                 spriteBatch.draw(region, x * ts, y * ts, ts, ts);
+
+                if (room.isDoor(x, srcY)) {
+                    int doorTileId = room.getDoorTextureID(x, srcY);
+                    if (doorTileId <= 0) continue;
+
+                    region = room.getTextureRegion(doorTileId - 1);
+                    if (region == null) continue;
+
+                    spriteBatch.draw(region, x * ts, y * ts, ts, ts);
+                }
             }
         }
     }
+
+
 
     // ----------------------------
     // World drawing (sprites) — WORLD SPACE
