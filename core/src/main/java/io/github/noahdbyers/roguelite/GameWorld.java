@@ -61,7 +61,7 @@ public class GameWorld {
 
     private final ArrayList<DamagePopup> damagePopups = new ArrayList<>();
 
-    private final Texture cardTexture = new Texture("ui/upgrade_card.png");
+    private final Texture cardTexture = Utility.loadNearest("ui/upgrade_card.png");
     private final Random rng = new Random();
 
     // Melee hitboxes
@@ -78,10 +78,10 @@ public class GameWorld {
     private final IdentityHashMap<AttackHitbox, Boolean> hitboxShakeUsed = new IdentityHashMap<>();
 
     // Upgrade animations
-    private Texture healthUpgradeSheet = new Texture("ui/healthUpgrade.png");
-    private Texture damageUpgradeSheet = new Texture("ui/damageUpgrade.png");
-    private Texture fireRateUpgradeSheet = new Texture("ui/fireRateUpgrade.png");
-    private Texture movementUpgradeSheet = new Texture("ui/movementUpgrade.png");
+    private Texture healthUpgradeSheet = Utility.loadNearest("ui/healthUpgrade.png");
+    private Texture damageUpgradeSheet = Utility.loadNearest("ui/damageUpgrade.png");
+    private Texture fireRateUpgradeSheet = Utility.loadNearest("ui/fireRateUpgrade.png");
+    private Texture movementUpgradeSheet = Utility.loadNearest("ui/movementUpgrade.png");
 
     ArrayList<TextureRegion> healthUpgrade;
     ArrayList<TextureRegion> damageUpgrade;
@@ -330,7 +330,7 @@ public class GameWorld {
     private void startWave() {
         enemies.clear();
 
-        int toSpawn = 5 + wave;
+        int toSpawn = 25 + wave;
         float baseSpeed = 60f + wave * 8f;
 
         for (int i = 0; i < toSpawn; i++) {
@@ -544,7 +544,7 @@ public class GameWorld {
         if (r == 0) return new Upgrade("Rapid Fire", "Fire rate +20%", fireRateUpgrade);
         if (r == 1) return new Upgrade("Runner", "Move speed +15%", movementUpgrade);
         if (r == 2) return new Upgrade("Vitality", "Max HP +1 and heal 1", healthUpgrade);
-        return new Upgrade("Extra Damage", "Bullet damage +1", damageUpgrade);
+        return new Upgrade("Extra Damage", "Damage +1", damageUpgrade);
     }
 
     public void setAimWorld(float x, float y) {
@@ -591,7 +591,7 @@ public class GameWorld {
             player.increaseMaxHealth(1);
             player.heal(1);
         } else if (u.name.equals("Extra Damage")) {
-            bulletDamage += 1;
+            weapon.setDamage(weapon.getDamage() + 1);
         } else if (u.name.equals("Projectile Speed")) {
             bulletSpeed *= 1.2f;
         }
@@ -659,16 +659,20 @@ public class GameWorld {
             for (int e = enemies.size() - 1; e >= 0; e--) {
                 Enemy enemy = enemies.get(e);
                 if (enemy == null) continue;
-
                 if (alreadyHit.contains(enemy)) continue;
 
-                if (overlaps(hb.rect.x, hb.rect.y, hb.rect.width, hb.rect.height,
-                    enemy.getX(), enemy.getY(), enemy.getWidth(), enemy.getHeight())) {
-
+                if (overlaps(
+                    hb.rect.x, hb.rect.y, hb.rect.width, hb.rect.height,
+                    enemy.getX(), enemy.getY(), enemy.getWidth(), enemy.getHeight()
+                )) {
                     enemy.takeDamage(hb.damage);
                     alreadyHit.add(enemy);
 
-                    damagePopups.add(new DamagePopup(enemy.getX(), enemy.getY() + enemy.getHeight(), hb.damage));
+                    // ✅ Popup at enemy center/top instead of top-left of hitbox
+                    float popX = enemy.getX() + enemy.getWidth() * 0.5f;
+                    float popY = enemy.getY() + enemy.getHeight() + 10f;
+                    damagePopups.add(new DamagePopup(popX, popY, hb.damage));
+
                     enemy.takeKnockback(hb.dir.x, hb.dir.y, 400f);
 
                     if (enemy.isDead()) {
@@ -676,21 +680,18 @@ public class GameWorld {
                         enemiesKilled++;
                     }
 
-                    // Gate hit SFX once per attack/hitbox
                     if (!sfxUsed) {
                         if (audio != null) audio.playHit();
                         sfxUsed = true;
                         hitboxHitSfxUsed.put(hb, true);
                     }
 
-                    // Gate freeze once per attack/hitbox
                     if (!freezeUsed) {
                         freezeTimer = FREEZE_DURATION;
                         freezeUsed = true;
                         hitboxFreezeUsed.put(hb, true);
                     }
 
-                    // Gate screen shake once per attack/hitbox
                     if (!shakeUsed) {
                         if (shake != null) shake.addShake(HIT_SHAKE_INTENSITY, HIT_SHAKE_DURATION);
                         shakeUsed = true;

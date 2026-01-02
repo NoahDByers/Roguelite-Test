@@ -2,16 +2,15 @@ package io.github.noahdbyers.roguelite;
 
 import com.badlogic.gdx.ApplicationAdapter;
 import com.badlogic.gdx.Gdx;
-import com.badlogic.gdx.Input;
-import com.badlogic.gdx.math.Vector2;
-import com.badlogic.gdx.utils.ScreenUtils;
+import com.badlogic.gdx.graphics.OrthographicCamera;
 import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.g2d.TextureRegion;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
+import com.badlogic.gdx.math.Vector2;
 import com.badlogic.gdx.utils.Align;
-import com.badlogic.gdx.graphics.OrthographicCamera;
+import com.badlogic.gdx.utils.ScreenUtils;
 import com.badlogic.gdx.utils.viewport.FitViewport;
 import com.badlogic.gdx.utils.viewport.Viewport;
 
@@ -21,27 +20,12 @@ import java.util.Random;
 
 public class Main extends ApplicationAdapter {
 
-    private final int[][] starterRoom = {
-        {2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,2},
-        {4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3},
-        {4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3},
-        {4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3},
-        {4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3},
-        {4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3},
-        {4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3},
-        {4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3},
-        {4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3},
-        {4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3},
-        {4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3},
-        {4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3},
-        {4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3},
-        {4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3},
-        {2,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,2}
-    };
-
     private OrthographicCamera camera;
-    private Viewport viewport;
-    private float gameplayZoom = 1.0f;   // < 1 zooms IN, > 1 zooms OUT
+    private Viewport viewport;     // world viewport (camera follows player)
+
+    // NEW: UI viewport (fixed virtual UI space; used to unproject mouse for UI hit-tests)
+    private OrthographicCamera uiCamera;
+    private Viewport uiViewport;
 
     private static final float VIRTUAL_WIDTH = 640;
     private static final float VIRTUAL_HEIGHT = 480;
@@ -68,8 +52,9 @@ public class Main extends ApplicationAdapter {
     private TextureRegion broadswordRegion;
     private ArrayList<TextureRegion> swordSwing;
     private Texture swordSwingSheet;
-    private ArrayList<TextureRegion> dungeonTiles = new ArrayList<>();
-    ArrayList<Room> rooms = new ArrayList<>();
+
+    private final ArrayList<TextureRegion> dungeonTiles = new ArrayList<>();
+    private ArrayList<Room> rooms = new ArrayList<>();
 
     // Weapon objects
     private Weapon broadsword;
@@ -99,23 +84,16 @@ public class Main extends ApplicationAdapter {
     private float shakeDuration = 0.12f;
     private float shakeIntensity = 6f;
 
-    // If you want camera follow, we use these as base and then add shake.
+    // Camera follow base (shake offsets are added on top)
     private float baseCamX = VIRTUAL_WIDTH / 2f;
     private float baseCamY = VIRTUAL_HEIGHT / 2f;
 
-    // Camera follow / zoom
-    private float camZoom = 0.75f;      // < 1 = zoom IN, > 1 = zoom OUT
-    private float zoomSpeed = 0.15f;    // optional zoom adjustment speed
-    private float followLerp = 12f;     // higher = snappier follow
-
-    // (optional) smooth follow target
-    private float camTargetX = VIRTUAL_WIDTH / 2f;
-    private float camTargetY = VIRTUAL_HEIGHT / 2f;
-
+    // Camera follow tuning
+    private float camZoom = 0.85f;  // < 1 = zoom IN, > 1 = zoom OUT
+    private float followLerp = 12f; // higher = snappier follow
 
     /** Call this from GameWorld (through a callback) to trigger screen shake. */
     public void addShake(float intensity, float duration) {
-        // Keep the strongest/longest if multiple hits happen close together
         shakeIntensity = Math.max(shakeIntensity, intensity);
         shakeDuration = Math.max(shakeDuration, duration);
         shakeTime = shakeDuration;
@@ -130,22 +108,29 @@ public class Main extends ApplicationAdapter {
         font.getData().setScale(1.2f);
         font.setColor(1f, 1f, 1f, 1f);
 
+        // -------------------- WORLD CAMERA/VIEWPORT --------------------
         camera = new OrthographicCamera();
         viewport = new FitViewport(VIRTUAL_WIDTH, VIRTUAL_HEIGHT, camera);
         viewport.apply(true);
-
-        camera.position.set(VIRTUAL_WIDTH / 2f, VIRTUAL_HEIGHT / 2f, 0);
+        camera.position.set(VIRTUAL_WIDTH / 2f, VIRTUAL_HEIGHT / 2f, 0f);
         camera.update();
 
-        // Load textures (once)
-        titleScreenBackgroundTex = new Texture("ui/title_screen.png");
-        generalAssets = new Texture("ui/general_assets.png");
-        uiBanners = new Texture("ui/bannerSpritesheet.png");
+        // -------------------- UI CAMERA/VIEWPORT (FIX FOR FULLSCREEN UI HITTEST) --------------------
+        uiCamera = new OrthographicCamera();
+        uiViewport = new FitViewport(VIRTUAL_WIDTH, VIRTUAL_HEIGHT, uiCamera);
+        uiViewport.apply(true);
+        uiCamera.position.set(VIRTUAL_WIDTH / 2f, VIRTUAL_HEIGHT / 2f, 0f);
+        uiCamera.update();
 
-        swordSheet = new Texture("weapons/File.png");
+        // Load textures (once)
+        titleScreenBackgroundTex = Utility.loadNearest("ui/title_screen.png");
+        generalAssets = Utility.loadNearest("ui/general_assets.png");
+        uiBanners = Utility.loadNearest("ui/bannerSpritesheet.png");
+
+        swordSheet = Utility.loadNearest("weapons/File.png");
         broadswordRegion = new TextureRegion(swordSheet, 0, 192, 64, 64);
 
-        swordSwingSheet = new Texture("weapons/swordSwing.png");
+        swordSwingSheet = Utility.loadNearest("weapons/swordSwing.png");
         swordSwing = new ArrayList<>();
         Collections.addAll(swordSwing,
             new TextureRegion(swordSwingSheet, 0, 0, 32, 32),
@@ -155,26 +140,21 @@ public class Main extends ApplicationAdapter {
             new TextureRegion(swordSwingSheet, 128, 0, 32, 32)
         );
 
-        cemeteryTiles = new Texture("cemetery/cemeteryTiles.png");
-        cemeteryFloor = new Texture("cemetery/cemeteryFloor.png");
-        dungeonTileSheet = new Texture("tilesets/dungeonTileset.png");
+        cemeteryTiles = Utility.loadNearest("cemetery/cemeteryTiles.png");
+        cemeteryFloor = Utility.loadNearest("cemetery/cemeteryFloor.png");
+        dungeonTileSheet = Utility.loadNearest("tilesets/dungeonTileset.png");
 
         // Audio
         audio = new AudioManager();
         audio.load();
         audio.startMainMusic();
 
-        // Pixel art settings
-        cemeteryTiles.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
-        cemeteryFloor.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
-        cemeteryTiles.setWrap(Texture.TextureWrap.ClampToEdge, Texture.TextureWrap.ClampToEdge);
-        cemeteryFloor.setWrap(Texture.TextureWrap.ClampToEdge, Texture.TextureWrap.ClampToEdge);
-
         // Extract UI regions
         uiBannerRegion = new TextureRegion(uiBanners, 16, 16, 192, 275);
         flagBannerRegion = new TextureRegion(generalAssets, 20, 292, 111, 32);
 
-        for(int y = 0; y < 10; y++) {
+        // Build dungeon tiles (10x10, 16px)
+        for (int y = 0; y < 10; y++) {
             for (int x = 0; x < 10; x++) {
                 dungeonTiles.add(new TextureRegion(dungeonTileSheet, x * 16, y * 16, 16, 16));
             }
@@ -208,80 +188,22 @@ public class Main extends ApplicationAdapter {
         marketButton = new Button(205, 20, 80, 80, null, marketButtonTextures);
         settingsCogButton = new Button(45, 20, 80, 80, null, settingsCogTextures);
         playButton = new Button(45, 360, 240, 80, "PLAY", basicButtonTextures);
-
         Collections.addAll(titleScreenButtons, marketButton, settingsCogButton, playButton);
 
         // Weapon object
-        broadsword = new Weapon("Iron Broadsword",
-            0.5f, 64, 64, 1, broadswordRegion, swordSwing);
+        broadsword = new Weapon("Iron Broadsword", 0f, 64, 64, 1, broadswordRegion, swordSwing);
 
-        // Do NOT create the world here — only when starting run
+        // Rooms
         InitializeRooms createTool = new InitializeRooms(dungeonTiles);
         rooms = createTool.getRooms();
     }
 
-    /** Build a fresh tileset list using already-loaded textures. */
-    private ArrayList<TextureRegion> makeCemeteryTileset() {
-        ArrayList<TextureRegion> cemeteryTileset = new ArrayList<>();
-        Collections.addAll(cemeteryTileset,
-            new TextureRegion(cemeteryFloor, 80, 0, 15, 15),
-            new TextureRegion(cemeteryTiles, 33, 0, 32, 32),
-            new TextureRegion(cemeteryTiles, 32, 32, 32, 32),
-            new TextureRegion(cemeteryTiles, 0, 32, 32, 32),
-            new TextureRegion(cemeteryTiles, 64, 32, 32, 32),
-            new TextureRegion(cemeteryTiles, 32, 64, 32, 32)
-        );
-        return cemeteryTileset;
-    }
-
-    /** Creates a fresh run (room/player/world/UI) safely. */
-    // Call this every frame BEFORE world.update(...)
-    private void updateAimWorld(GameWorld world) {
-        Room room = world.getRoom();
-        if (room == null) return;
-
-        float ts = room.getTileSize();
-        float mapW = room.getRoomWidth() * ts;
-        float mapH = room.getRoomHeight() * ts;
-
-        float screenW = Gdx.graphics.getWidth();
-        float screenH = Gdx.graphics.getHeight();
-
-        float scale = Math.min(screenW / mapW, screenH / mapH);
-        float offsetX = (screenW - mapW * scale) * 0.5f;
-        float offsetY = (screenH - mapH * scale) * 0.5f;
-
-        // Mouse in screen pixels (origin top-left), convert to bottom-left
-        float sx = Gdx.input.getX();
-        float sy = screenH - Gdx.input.getY();
-
-        // Convert to world coords (inverse of translate+scale used for rendering)
-        float wx = (sx - offsetX) / scale;
-        float wy = (sy - offsetY) / scale;
-
-        // Optional: clamp to map bounds so it doesn't go negative/outside
-        wx = Math.max(0f, Math.min(mapW, wx));
-        wy = Math.max(0f, Math.min(mapH, wy));
-
-        world.setAimWorld(wx, wy);
-    }
-
     private void startNewRun() {
-        // Reset shake
         shakeTime = 0f;
 
-        if (player != null) {
-            player.dispose();
-            player = null;
-        }
-        if (UI != null) {
-            UI.dispose();
-            UI = null;
-        }
-        if (world != null) {
-            world.dispose();
-            world = null;
-        }
+        if (player != null) { player.dispose(); player = null; }
+        if (UI != null) { UI.dispose(); UI = null; }
+        if (world != null) { world.dispose(); world = null; }
 
         room = rooms.get(0);
         room.setViewport(viewport);
@@ -293,64 +215,47 @@ public class Main extends ApplicationAdapter {
         world.setWeapon(broadsword);
         world.setScreenShake(this::addShake);
 
+        // Use authoritative instances
         player = world.getPlayer();
-        room   = world.getRoom();
-        // IMPORTANT: GameWorld must implement setScreenShake(...) for this to compile.
-        // Example signature:
-        // public interface ScreenShake { void addShake(float intensity, float duration); }
-        // public void setScreenShake(ScreenShake s) { this.shake = s; }
-        world.setScreenShake(this::addShake);
+        room = world.getRoom();
 
         UI = new UserInterface(VIRTUAL_WIDTH, VIRTUAL_HEIGHT, world, shapeRenderer, new ArrayList<>(), spriteBatch, viewport);
+
+        // ✅ Critical: give UI its own viewport so mouse hit-tests stay correct in fullscreen/letterbox
+        UI.setUiViewport(uiViewport);
     }
 
-    /**
-     * Integer-scaled viewport on resize (prevents tile seams when resizing).
-     */
     @Override
     public void resize(int width, int height) {
-        int scale = Math.max(1, Math.min(
-            width / (int) VIRTUAL_WIDTH,
-            height / (int) VIRTUAL_HEIGHT
-        ));
+        // ✅ Let FitViewport compute letterboxing properly (fixes fullscreen mouse mapping)
+        viewport.update(width, height, true);
+        uiViewport.update(width, height, true);
 
-        int vpW = (int) VIRTUAL_WIDTH * scale;
-        int vpH = (int) VIRTUAL_HEIGHT * scale;
-
-        int vpX = (width - vpW) / 2;
-        int vpY = (height - vpH) / 2;
-
-        viewport.setScreenBounds(vpX, vpY, vpW, vpH);
-        viewport.apply(true);
-
-        camera.position.set(VIRTUAL_WIDTH / 2f, VIRTUAL_HEIGHT / 2f, 0f);
-        camera.update();
+        // If your Room/UI cache viewport bounds anywhere, keep it in sync
+        if (room != null) room.setViewport(viewport);
+        if (UI != null) UI.setUiViewport(uiViewport);
     }
 
     @Override
     public void render() {
         ScreenUtils.clear(0.15f, 0.15f, 0.2f, 1f);
-
         float delta = Gdx.graphics.getDeltaTime();
 
-        // Apply viewport BEFORE any unproject calls
+        // Always apply world viewport before unprojecting world mouse coords
         viewport.apply();
 
         // -------------------- Title Screen --------------------
         if (titleScreen) {
             baseCamX = VIRTUAL_WIDTH / 2f;
             baseCamY = VIRTUAL_HEIGHT / 2f;
-
-            // Keep title zoom stable for UI consistency
             camera.zoom = 1f;
 
-            // Apply shake (if any) and update camera
             updateCameraWithShake(delta);
 
             spriteBatch.setProjectionMatrix(camera.combined);
             shapeRenderer.setProjectionMatrix(camera.combined);
 
-            // Mouse world for buttons (title screen uses same viewport/camera)
+            // Mouse world for buttons (title screen uses world viewport)
             mouseWorld.set(Gdx.input.getX(), Gdx.input.getY());
             viewport.unproject(mouseWorld);
 
@@ -375,7 +280,6 @@ public class Main extends ApplicationAdapter {
 
                 startNewRun();
                 titleScreen = false;
-
                 audio.startGameMusic();
             }
 
@@ -388,13 +292,10 @@ public class Main extends ApplicationAdapter {
 
         // -------------------- Gameplay --------------------
         if (world != null) {
-
-            // Always use the authoritative instances from the world
             Player p = world.getPlayer();
             Room r = world.getRoom();
 
-            // ---- 1) CAMERA FOLLOW + CLAMP (WITH ZOOM) ----
-            float camZoom = 0.75f;     // <1 zoom in, >1 zoom out
+            // ---- CAMERA FOLLOW + CLAMP (WITH ZOOM) ----
             camera.zoom = camZoom;
 
             if (p != null && r != null) {
@@ -404,39 +305,41 @@ public class Main extends ApplicationAdapter {
                 float roomW = r.getRoomWidth() * r.getTileSize();
                 float roomH = r.getRoomHeight() * r.getTileSize();
 
-                // visible world size depends on zoom
                 float halfW = (VIRTUAL_WIDTH * camZoom) * 0.5f;
                 float halfH = (VIRTUAL_HEIGHT * camZoom) * 0.5f;
 
-                baseCamX = clampf(px, halfW, Math.max(halfW, roomW - halfW));
-                baseCamY = clampf(py, halfH, Math.max(halfH, roomH - halfH));
+                float targetX = clampf(px, halfW, Math.max(halfW, roomW - halfW));
+                float targetY = clampf(py, halfH, Math.max(halfH, roomH - halfH));
+
+                // Smooth follow
+                float a = 1f - (float) Math.exp(-followLerp * delta);
+                baseCamX += (targetX - baseCamX) * a;
+                baseCamY += (targetY - baseCamY) * a;
             } else {
                 baseCamX = VIRTUAL_WIDTH / 2f;
                 baseCamY = VIRTUAL_HEIGHT / 2f;
             }
 
-            // Apply shake + snap + camera.update()
+            // Apply shake + camera.update()
             updateCameraWithShake(delta);
 
-            // IMPORTANT: set projection after camera update
             spriteBatch.setProjectionMatrix(camera.combined);
             shapeRenderer.setProjectionMatrix(camera.combined);
 
-            // ---- 2) Mouse world AFTER camera update ----
+            // Mouse world AFTER camera update
             mouseWorld.set(Gdx.input.getX(), Gdx.input.getY());
             viewport.unproject(mouseWorld);
-
-            // Aim uses world coords
             world.setAimWorld(mouseWorld.x, mouseWorld.y);
 
             world.update(delta);
         }
 
         if (UI != null) {
+            // Main has already set spriteBatch/shaperenderer projection to camera.combined
+            // and applied the world viewport. UI will swap to screen/UI space internally.
             UI.drawQueue();
         }
     }
-
 
     private void updateCameraWithShake(float delta) {
         float sx = 0f;
@@ -446,13 +349,14 @@ public class Main extends ApplicationAdapter {
             shakeTime -= delta;
             if (shakeTime < 0f) shakeTime = 0f;
 
-            float t = (shakeDuration <= 0f) ? 0f : (shakeTime / shakeDuration);
-            float strength = shakeIntensity * t * t;
+            float t = (shakeDuration <= 0f) ? 0f : (shakeTime / shakeDuration); // 1 -> 0
+            float strength = shakeIntensity * t * t; // ease out
 
             sx = (shakeRng.nextFloat() * 2f - 1f) * strength;
             sy = (shakeRng.nextFloat() * 2f - 1f) * strength;
         }
 
+        // Snap to whole pixels for cleaner pixel-art rendering
         float camX = Math.round(baseCamX + sx);
         float camY = Math.round(baseCamY + sy);
 
@@ -460,34 +364,6 @@ public class Main extends ApplicationAdapter {
         camera.update();
     }
 
-    private void updateCameraFollow(float delta) {
-        if (player == null || room == null) {
-            baseCamX = VIRTUAL_WIDTH / 2f;
-            baseCamY = VIRTUAL_HEIGHT / 2f;
-            return;
-        }
-
-        // Zoom
-        camera.zoom = gameplayZoom;
-
-        float px = player.getX() + player.getWidth() * 0.5f;
-        float py = player.getY() + player.getHeight() * 0.5f;
-
-        float roomW = room.getRoomWidth()  * room.getTileSize();
-        float roomH = room.getRoomHeight() * room.getTileSize();
-
-        // IMPORTANT: clamp using the *camera view size*, which changes with zoom
-        float halfW = (viewport.getWorldWidth()  * 0.5f) * camera.zoom;
-        float halfH = (viewport.getWorldHeight() * 0.5f) * camera.zoom;
-
-        float targetX = clampf(px, halfW, Math.max(halfW, roomW - halfW));
-        float targetY = clampf(py, halfH, Math.max(halfH, roomH - halfH));
-
-        // Smooth follow (optional). If you want instant follow, just set baseCamX/Y = targetX/Y
-        float a = 1f - (float)Math.exp(-followLerp * delta);
-        baseCamX += (targetX - baseCamX) * a;
-        baseCamY += (targetY - baseCamY) * a;
-    }
     private static float clampf(float v, float lo, float hi) {
         return Math.max(lo, Math.min(hi, v));
     }
@@ -511,6 +387,7 @@ public class Main extends ApplicationAdapter {
 
         if (cemeteryTiles != null) cemeteryTiles.dispose();
         if (cemeteryFloor != null) cemeteryFloor.dispose();
+        if (dungeonTileSheet != null) dungeonTileSheet.dispose();
 
         Zombie.disposeShared();
 

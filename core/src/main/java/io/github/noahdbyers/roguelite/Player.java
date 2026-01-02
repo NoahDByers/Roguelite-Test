@@ -60,8 +60,8 @@ public class Player extends Entity {
     private final ArrayList<TextureRegion> upRunFrames = new ArrayList<>();
 
     // Stats / timers
-    private int maxHealth = 500000;
-    private int health = 500000;
+    private int maxHealth = 5;
+    private int health = 5;
 
     private int mana = health;
     private int maxMana = maxHealth;
@@ -72,8 +72,8 @@ public class Player extends Entity {
     public Player(float x, float y, float speed, float width, float height) {
         super(x, y, speed, width, height);
 
-        idleSheet = new Texture("player/Idle.png");
-        runSheet  = new Texture("player/Run.png");
+        idleSheet = Utility.loadNearest("player/Idle.png");
+        runSheet  = Utility.loadNearest("player/Run.png");
 
         final int fw = 16;
         final int fh = 24;

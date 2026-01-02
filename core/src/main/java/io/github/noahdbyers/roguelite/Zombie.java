@@ -36,7 +36,7 @@ public class Zombie extends Enemy {
 
     private static void ensureAssetsLoaded() {
         if (zombieRunSheet == null) {
-            zombieRunSheet = new Texture("Zombie/Walk.png");
+            zombieRunSheet = Utility.loadNearest("Zombie/Walk.png");
         }
         if (!framesBuilt) {
             buildFrames();

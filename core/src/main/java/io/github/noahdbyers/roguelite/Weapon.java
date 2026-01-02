@@ -171,7 +171,7 @@ public class Weapon {
         this.animate = status;
     }
 
-    public void setDamge(int damage) {
+    public void setDamage(int damage) {
         this.damage = damage;
     }
 
