@@ -208,7 +208,6 @@ public class UserInterface {
         shapeRenderer.setTransformMatrix(identityTransform);
 
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
-        drawBulletsSafe();
         shapeRenderer.end();
 
         // ----------------------------
@@ -516,18 +515,6 @@ public class UserInterface {
         Player p = world.getPlayer();
         if (p != null) p.draw(spriteBatch, delta);
     }
-
-    // ----------------------------
-    // World drawing (bullets) — WORLD SPACE
-    // ----------------------------
-    private void drawBulletsSafe() {
-        shapeRenderer.setColor(bulletColor);
-        for (Bullet b : world.getBullets()) {
-            if (b == null) continue;
-            shapeRenderer.rect(b.getX(), b.getY(), b.getWidth(), b.getHeight());
-        }
-    }
-
     // ----------------------------
     // HUD — SCREEN SPACE
     // ----------------------------

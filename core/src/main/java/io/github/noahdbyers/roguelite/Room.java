@@ -42,14 +42,17 @@ public class Room {
     // Needed for correct mouse->world conversion with FitViewport
     private Viewport viewport;
 
-    public enum DoorSide { UP, DOWN, LEFT, RIGHT, NONE }
+    //Storing information about the room template in a room template object
+    private RoomTemplate template;
 
+    public enum DoorSide { UP, DOWN, LEFT, RIGHT, NONE }
     public Room(int tileSize,
                 int roomWidth,
                 int roomHeight,
                 int[][] draw,
                 int[][] collisions,
-                ArrayList<TextureRegion> tileSet) {
+                ArrayList<TextureRegion> tileSet,
+                RoomTemplate roomTemplate) {
 
         this.tileSize = tileSize;
         this.roomWidth = roomWidth;
@@ -58,20 +61,7 @@ public class Room {
         this.draw = draw;
         this.collisions = collisions;
         this.tileSet = tileSet;
-    }
-
-    /** Optional overload if you already have a door layer ready. */
-    public Room(int tileSize,
-                int roomWidth,
-                int roomHeight,
-                int[][] draw,
-                int[][] collisions,
-                int[][] doors,
-                ArrayList<TextureRegion> tileSet) {
-
-        this(tileSize, roomWidth, roomHeight, draw, collisions, tileSet);
-        this.doors = doors;
-        applyDoorCollisionMask();
+        this.template = roomTemplate;
     }
 
     /** Set once from Main after you create the viewport. */
@@ -121,14 +111,6 @@ public class Room {
         applyDoorCollisionMask();
     }
 
-    /** Convenience if you want to set all 4 at once. */
-    public void setDoorActives(boolean up, boolean right, boolean down, boolean left) {
-        doorUpActive = up;
-        doorRightActive = right;
-        doorDownActive = down;
-        doorLeftActive = left;
-        applyDoorCollisionMask();
-    }
     /** Returns true if door grid marks this tile as a “door slot”. */
     public boolean isDoorSlot(int x, int y) {
         if (!inBounds(x, y)) return false;
@@ -261,4 +243,6 @@ public class Room {
         if (tx < 0 || tx >= roomWidth || ty < 0 || ty >= roomHeight) return true;
         return collisions != null && collisions[ty][tx] == 76;
     }
+
+    public RoomTemplate getTemplate() { return template; }
 }

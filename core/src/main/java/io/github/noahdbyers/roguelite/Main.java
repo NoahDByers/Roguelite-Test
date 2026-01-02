@@ -199,6 +199,22 @@ public class Main extends ApplicationAdapter {
     }
 
     private void startNewRun() {
+        RoomLibrary lib = new RoomLibrary(rooms);
+        MapCreator gen = new MapCreator(lib.getTemplates());
+
+        int[][] chosenTemplates = gen.generate();
+
+        Room[][] worldRooms = new Room[10][10];
+        Random rng = new Random();
+
+        for (int y = 0; y < 10; y++) {
+            for (int x = 0; x < 10; x++) {
+                int tid = chosenTemplates[y][x];
+                worldRooms[y][x] = lib.pickRoomForTemplate(tid, rng);
+            }
+        }
+
+        room = worldRooms[5][5];
         shakeTime = 0f;
 
         if (player != null) { player.dispose(); player = null; }

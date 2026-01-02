@@ -7,6 +7,7 @@ import java.util.ArrayList;
 public class InitializeRooms {
     private ArrayList<Room> rooms;
     private ArrayList<TextureRegion> tileSet;
+    private final RoomTemplate room1 = new RoomTemplate(true, true, true, true);
     InitializeRooms(ArrayList<TextureRegion> tileSet) {
         this.rooms = new ArrayList<>();
         this.tileSet = tileSet;
@@ -116,13 +117,11 @@ public class InitializeRooms {
             {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
             {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
             {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
-            {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
             {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,37,38,0,0,0,0,0,0,0,0,0,0,0}
         };
 
-        room = new Room(32, 32, 32, layer1, layer2, tileSet);
+        room = new Room(32, 32, 32, layer1, layer2, tileSet, room1);
         room.setDoorsGrid(doors);
-        room.setDoorActives(false, false, false, false);
         rooms.add(room);
         return rooms;
     }
