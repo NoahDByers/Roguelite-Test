@@ -20,21 +20,23 @@ import java.util.Random;
 
 public class Main extends ApplicationAdapter {
 
+    // -------------------- World/camera --------------------
     private OrthographicCamera camera;
     private Viewport viewport;     // world viewport (camera follows player)
 
-    // NEW: UI viewport (fixed virtual UI space; used to unproject mouse for UI hit-tests)
+    // UI viewport (fixed virtual UI space; used to unproject mouse for UI hit-tests)
     private OrthographicCamera uiCamera;
     private Viewport uiViewport;
 
     private static final float VIRTUAL_WIDTH = 640;
     private static final float VIRTUAL_HEIGHT = 480;
 
+    // -------------------- Rendering --------------------
     private ShapeRenderer shapeRenderer;
     private SpriteBatch spriteBatch;
     private BitmapFont font;
 
-    // Title / UI textures
+    // -------------------- Title / UI textures --------------------
     private Texture titleScreenBackgroundTex;
     private Texture uiBanners;
     private Texture generalAssets;
@@ -42,19 +44,28 @@ public class Main extends ApplicationAdapter {
     private TextureRegion uiBannerRegion;
     private TextureRegion flagBannerRegion;
 
-    // World textures (tiles)
+    // -------------------- World textures (tiles) --------------------
     private Texture cemeteryTiles;
     private Texture cemeteryFloor;
     private Texture dungeonTileSheet;
 
-    // Weapon textures
+    // -------------------- Weapon textures --------------------
     private Texture swordSheet;
     private TextureRegion broadswordRegion;
     private ArrayList<TextureRegion> swordSwing;
     private Texture swordSwingSheet;
 
+    // Tiles + rooms
     private final ArrayList<TextureRegion> dungeonTiles = new ArrayList<>();
     private ArrayList<Room> rooms = new ArrayList<>();
+
+    // NEW: WFC world (grid of rooms)
+    private static final int WORLD_W = 10;
+    private static final int WORLD_H = 10;
+    private Room[][] worldRooms;          // [y][x]
+    private int[][] chosenTemplates;      // [y][x]
+    private int worldCellX = 5;
+    private int worldCellY = 5;
 
     // Weapon objects
     private Weapon broadsword;
@@ -115,14 +126,14 @@ public class Main extends ApplicationAdapter {
         camera.position.set(VIRTUAL_WIDTH / 2f, VIRTUAL_HEIGHT / 2f, 0f);
         camera.update();
 
-        // -------------------- UI CAMERA/VIEWPORT (FIX FOR FULLSCREEN UI HITTEST) --------------------
+        // -------------------- UI CAMERA/VIEWPORT --------------------
         uiCamera = new OrthographicCamera();
         uiViewport = new FitViewport(VIRTUAL_WIDTH, VIRTUAL_HEIGHT, uiCamera);
         uiViewport.apply(true);
         uiCamera.position.set(VIRTUAL_WIDTH / 2f, VIRTUAL_HEIGHT / 2f, 0f);
         uiCamera.update();
 
-        // Load textures (once)
+        // Load textures
         titleScreenBackgroundTex = Utility.loadNearest("ui/title_screen.png");
         generalAssets = Utility.loadNearest("ui/general_assets.png");
         uiBanners = Utility.loadNearest("ui/bannerSpritesheet.png");
@@ -199,55 +210,66 @@ public class Main extends ApplicationAdapter {
     }
 
     private void startNewRun() {
+        // Reset shake
+        shakeTime = 0f;
+
+        // Clean up previous run
+        if (player != null) { player.dispose(); player = null; }
+        if (UI != null) { UI.dispose(); UI = null; }
+        if (world != null) { world.dispose(); world = null; }
+
+        // -------------------- WFC GENERATION --------------------
+        // Build templates from your room library (you said all combos exist except ffff)
         RoomLibrary lib = new RoomLibrary(rooms);
         MapCreator gen = new MapCreator(lib.getTemplates());
 
-        int[][] chosenTemplates = gen.generate();
+        chosenTemplates = gen.generate();
 
-        Room[][] worldRooms = new Room[10][10];
+        worldRooms = new Room[WORLD_H][WORLD_W];
         Random rng = new Random();
 
-        for (int y = 0; y < 10; y++) {
-            for (int x = 0; x < 10; x++) {
+        for (int y = 0; y < WORLD_H; y++) {
+            for (int x = 0; x < WORLD_W; x++) {
                 int tid = chosenTemplates[y][x];
                 worldRooms[y][x] = lib.pickRoomForTemplate(tid, rng);
             }
         }
 
-        room = worldRooms[5][5];
-        shakeTime = 0f;
+        // Start in the center cell
+        worldCellX = WORLD_W / 2;
+        worldCellY = WORLD_H / 2;
 
-        if (player != null) { player.dispose(); player = null; }
-        if (UI != null) { UI.dispose(); UI = null; }
-        if (world != null) { world.dispose(); world = null; }
+        room = worldRooms[worldCellY][worldCellX];
+        if (room == null) room = rooms.get(0); // ultra-safe fallback
 
-        room = rooms.get(0);
+        // Keep viewport references in sync for any project/unproject or UI conversions
         room.setViewport(viewport);
 
+        // Spawn player (adjust spawn to your “center safe tile” later if desired)
         player = new Player(100, 100, 170, 32, 32);
 
+        // Build world
         world = new GameWorld(room, player, spriteBatch);
         world.setAudio(audio);
         world.setWeapon(broadsword);
         world.setScreenShake(this::addShake);
 
-        // Use authoritative instances
+        // Authoritative instances
         player = world.getPlayer();
         room = world.getRoom();
 
         UI = new UserInterface(VIRTUAL_WIDTH, VIRTUAL_HEIGHT, world, shapeRenderer, new ArrayList<>(), spriteBatch, viewport);
 
-        // ✅ Critical: give UI its own viewport so mouse hit-tests stay correct in fullscreen/letterbox
+        // Critical: UI viewport for fullscreen/letterbox mouse mapping
         UI.setUiViewport(uiViewport);
     }
 
     @Override
     public void resize(int width, int height) {
-        // ✅ Let FitViewport compute letterboxing properly (fixes fullscreen mouse mapping)
+        // Let FitViewport compute letterboxing properly (fixes fullscreen mouse mapping)
         viewport.update(width, height, true);
         uiViewport.update(width, height, true);
 
-        // If your Room/UI cache viewport bounds anywhere, keep it in sync
         if (room != null) room.setViewport(viewport);
         if (UI != null) UI.setUiViewport(uiViewport);
     }
@@ -257,7 +279,7 @@ public class Main extends ApplicationAdapter {
         ScreenUtils.clear(0.15f, 0.15f, 0.2f, 1f);
         float delta = Gdx.graphics.getDeltaTime();
 
-        // Always apply world viewport before unprojecting world mouse coords
+        // Apply world viewport before any world unproject calls
         viewport.apply();
 
         // -------------------- Title Screen --------------------
@@ -311,7 +333,7 @@ public class Main extends ApplicationAdapter {
             Player p = world.getPlayer();
             Room r = world.getRoom();
 
-            // ---- CAMERA FOLLOW + CLAMP (WITH ZOOM) ----
+            // Camera follow + zoom
             camera.zoom = camZoom;
 
             if (p != null && r != null) {
@@ -351,8 +373,7 @@ public class Main extends ApplicationAdapter {
         }
 
         if (UI != null) {
-            // Main has already set spriteBatch/shaperenderer projection to camera.combined
-            // and applied the world viewport. UI will swap to screen/UI space internally.
+            // Main already set projection to camera.combined; UI swaps internally to screen space when needed.
             UI.drawQueue();
         }
     }
