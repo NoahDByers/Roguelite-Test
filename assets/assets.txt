@@ -58,6 +58,7 @@ ui/general_assets.png
 ui/healthUpgrade.png
 ui/libgdx.png
 ui/movementUpgrade.png
+ui/shrineSheet.png
 ui/title_screen.png
 ui/uiskin.atlas
 ui/uiskin.json

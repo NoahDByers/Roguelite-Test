@@ -15,9 +15,4 @@ public class WFCCell {
         for(boolean b : possible) if (b) c++;
         return c;
     }
-
-
-
-
-
 }

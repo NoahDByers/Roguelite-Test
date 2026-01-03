@@ -4,10 +4,13 @@ import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.graphics.g2d.TextureRegion;
 import com.badlogic.gdx.math.Vector2;
 import com.badlogic.gdx.utils.viewport.Viewport;
+import com.badlogic.gdx.math.Rectangle;
 
 import java.util.ArrayList;
 
 public class Room {
+    //Door trigger
+    private Rectangle doorUp, doorDown, doorLeft, doorRight;
 
     private int tileSize = 32;
     private int roomWidth = 20;   // tiles
@@ -245,4 +248,42 @@ public class Room {
     }
 
     public RoomTemplate getTemplate() { return template; }
+
+    public Rectangle getDoorTrigger(Dir dir) {
+        switch(dir) {
+            case UP: return doorUp;
+            case DOWN: return doorDown;
+            case LEFT: return doorLeft;
+            case RIGHT: return doorRight;
+        }
+
+        return null;
+    }
+
+    public void rebuildDoorTriggers() {
+        if (template == null) return;
+
+        float ts = getTileSize();
+        float w = getRoomWidth();
+        float h = getRoomHeight();
+
+        //Size of the trigger region (tweak these)
+        float triggerThickness = ts * 0.6f;
+        float triggerSpan = ts * 2.0f; // how wide the "door" is along hte edge
+
+        float midX = w * 0.5f;
+        float midY = h * 0.5f;
+
+        //Centered along each edge
+        doorUp = new Rectangle(midX - triggerSpan * 0.5f, h - triggerThickness, triggerSpan, triggerThickness);
+        doorDown = new Rectangle(midX - triggerSpan * 0.5f, 0f, triggerSpan, triggerThickness);
+        doorLeft = new Rectangle(0f, midY - triggerSpan * 0.5f, triggerThickness, triggerSpan);
+        doorRight = new Rectangle(w - triggerThickness, midY - triggerSpan * 0.5f, triggerThickness, triggerSpan);
+
+        // If a side is closed, “disable” that trigger by shrinking it to 0
+        if (!template.up) doorUp.set(0,0,0,0);
+        if (!template.down) doorDown.set(0,0,0,0);
+        if (!template.left) doorLeft.set(0,0,0,0);
+        if (!template.right) doorRight.set(0,0,0,0);
+    }
 }
