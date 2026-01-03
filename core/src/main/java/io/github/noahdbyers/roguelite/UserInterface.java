@@ -12,8 +12,8 @@ import com.badlogic.gdx.graphics.g2d.TextureRegion;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.math.Matrix4;
 import com.badlogic.gdx.math.Vector2;
-import com.badlogic.gdx.utils.Align;
 import com.badlogic.gdx.math.Vector3;
+import com.badlogic.gdx.utils.Align;
 import com.badlogic.gdx.utils.viewport.Viewport;
 
 import java.util.ArrayList;
@@ -21,17 +21,17 @@ import java.util.ArrayList;
 public class UserInterface {
     // World viewport (the one used for camera/gameplay rendering)
     private final Viewport viewport;
-    // UI viewport (FitViewport / ScreenViewport used for HUD & upgrade menu)
-    // This is what fixes fullscreen mouse offset/letterboxing issues.
+
+    // UI viewport (FitViewport / ScreenViewport used for HUD & menus)
     private Viewport uiViewport;
     private final Vector2 uiMouse = new Vector2();
 
-    // Note: keep these as the VIRTUAL ui size (not the window size).
+    // Virtual UI size
     private final float width;
     private final float height;
 
     private final GameWorld world;
-    private final ShapeRenderer shapeRenderer;
+    private final ShapeRenderer shapeRenderer; // kept for compatibility (you removed bullets)
     private final SpriteBatch spriteBatch;
     private final ArrayList<Entity> entities; // kept for compatibility; not used here
 
@@ -43,6 +43,7 @@ public class UserInterface {
 
     // 1x1 white pixel for overlays
     private final Texture whitePixel;
+
     // ----------------------------
     // Upgrade input delay (prevents accidental selection)
     // ----------------------------
@@ -50,12 +51,8 @@ public class UserInterface {
     private float upgradeInputTimer = 0f;
     private boolean prevChoosingUpgrade = false;
 
-
     // Visual highlight only
     private int selectedUpgradeIndex = -1;
-
-    // Colors
-    private final Color bulletColor = new Color(1f, 1f, 0f, 1f);
 
     // UI textures
     private final Texture uiBarBg = Utility.loadNearest("ui/BarIcon.png");
@@ -69,6 +66,16 @@ public class UserInterface {
     private final Texture iconSoul = Utility.loadNearest("ui/SoulIcon.png");
     private final Texture iconKill = Utility.loadNearest("ui/SkullIcon.png");
     private final Texture iconWave = Utility.loadNearest("ui/ClearIcon.png");
+
+    // ----------------------------
+    // NEW: Drop + Shrine visuals (WORLD SPACE)
+    // ----------------------------
+    // If you have a dedicated drop sprite, swap this path.
+    private final TextureRegion dropTextureRegion = new TextureRegion(iconSoul);
+
+    // If you already have a shrine texture/region somewhere else, swap this.
+    private final Texture shrineSheet = new Texture("ui/shrineSheet.png");
+    private final TextureRegion shrineTextureRegion = new TextureRegion(shrineSheet, 445, 21, 36, 71);
 
     // ----------------------------
     // Upgrade layout tuning
@@ -110,8 +117,6 @@ public class UserInterface {
     // ----------------------------
     private final Matrix4 screenProjection = new Matrix4();
     private final Matrix4 identityTransform = new Matrix4();
-
-    // Save/restore world projection so we don't break camera following next frame
     private final Matrix4 savedWorldProjection = new Matrix4();
 
     public UserInterface(float width, float height,
@@ -137,7 +142,7 @@ public class UserInterface {
         whitePixel = new Texture(pm);
         pm.dispose();
 
-        // Screen-space: (0..width, 0..height) where width/height are your VIRTUAL size
+        // Screen-space: (0..width, 0..height) where width/height are VIRTUAL size
         screenProjection.setToOrtho2D(0f, 0f, width, height);
         identityTransform.idt();
     }
@@ -147,13 +152,19 @@ public class UserInterface {
         this.uiViewport = vp;
     }
 
+    /** If Main expects UI.resize(...), keep this method. */
+    public void resize(int screenW, int screenH) {
+        // Virtual UI size is fixed; viewport itself is updated in Main.
+        // This method exists mainly to satisfy older call sites.
+        screenProjection.setToOrtho2D(0f, 0f, width, height);
+    }
+
     /** Get mouse in UI coordinates (virtual coords), robust to fullscreen/letterboxing. */
     private void getMouseUi(Vector2 out) {
         out.set(Gdx.input.getX(), Gdx.input.getY());
         if (uiViewport != null) {
-            uiViewport.unproject(out); // -> UI world coords (0..width, 0..height if FitViewport)
+            uiViewport.unproject(out);
         } else {
-            // Fallback: assumes no letterboxing (may be wrong in fullscreen)
             out.set(Gdx.input.getX(), height - Gdx.input.getY());
         }
     }
@@ -182,14 +193,22 @@ public class UserInterface {
         savedWorldProjection.set(spriteBatch.getProjectionMatrix());
 
         // ----------------------------
-        // 1) WORLD (SpriteBatch): tiles + sprites + weapon
+        // 1) WORLD (SpriteBatch): tiles + shrine + drops + sprites + weapon
         // Must use CAMERA projection so the camera follows player.
         // ----------------------------
         spriteBatch.setProjectionMatrix(savedWorldProjection);
         spriteBatch.setTransformMatrix(identityTransform);
 
         spriteBatch.begin();
+
         drawWorldTilesSafe();
+
+        // ✅ SHRINE (WORLD SPACE)
+        drawShrineWorldSpace();
+
+        // ✅ DROPS (WORLD SPACE)
+        drawDropsWorldSpace();
+
         drawSpritesSafe(delta);
 
         Weapon w = world.getWeapon();
@@ -198,20 +217,11 @@ public class UserInterface {
             tmpMouseWorld.set(world.getAimWorldX(), world.getAimWorldY());
             w.draw(spriteBatch, delta, p, tmpMouseWorld);
         }
+
         spriteBatch.end();
 
         // ----------------------------
-        // 2) WORLD (ShapeRenderer): bullets
-        // Must also use camera projection.
-        // ----------------------------
-        shapeRenderer.setProjectionMatrix(savedWorldProjection);
-        shapeRenderer.setTransformMatrix(identityTransform);
-
-        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
-        shapeRenderer.end();
-
-        // ----------------------------
-        // 3) UI (SpriteBatch): HUD + upgrade menu + game over
+        // 2) UI (SpriteBatch): HUD + upgrade menu + game over
         // Switch to SCREEN SPACE so UI doesn’t move/zoom with the camera.
         // ----------------------------
         spriteBatch.setProjectionMatrix(screenProjection);
@@ -222,6 +232,7 @@ public class UserInterface {
         if (!world.isChoosingUpgrade()) {
             drawHud();
             drawDamagePopupsScreenSpace();
+            drawShrinePromptIfNear(); // optional UI prompt
         }
 
         if (world.isChoosingUpgrade()) {
@@ -251,6 +262,88 @@ public class UserInterface {
         spriteBatch.setTransformMatrix(identityTransform);
 
         wasChoosingUpgrade = world.isChoosingUpgrade();
+    }
+
+    // ----------------------------
+    // NEW: Shrine rendering (WORLD SPACE)
+    // ----------------------------
+    private void drawShrineWorldSpace() {
+        // Assumes your GameWorld has: public Shrine getShrine()
+        // And Shrine has fields x,y,w,h (or getters).
+        Shrine s;
+        try {
+            s = world.getShrine();
+        } catch (Throwable t) {
+            return; // if your world doesn’t have shrine yet, don’t crash UI
+        }
+
+        if (s == null) return;
+
+        float x = s.x;
+        float y = s.y;
+        float w = s.w;
+        float h = s.h;
+
+        // If your shrine uses a fixed size, you can ignore w/h and set constants.
+        spriteBatch.draw(shrineTextureRegion, x, y, w, h);
+    }
+
+    private void drawDropsWorldSpace() {
+        if (world.getDrops() == null) return;
+
+        for (Drop d : world.getDrops()) {
+            if (d == null) continue;
+            spriteBatch.draw(dropTextureRegion, d.x, d.y, d.w, d.h);
+        }
+    }
+
+    private void drawShrinePromptIfNear() {
+        // Optional: show “Press E” when player is near shrine.
+        // Doesn’t require any extra methods; uses simple distance check.
+
+        Player p = world.getPlayer();
+        if (p == null) return;
+
+        Shrine s;
+        try {
+            s = world.getShrine();
+        } catch (Throwable t) {
+            return;
+        }
+        if (s == null) return;
+
+        float px = p.getX() + p.getWidth() * 0.5f;
+        float py = p.getY() + p.getHeight() * 0.5f;
+
+        float sx = s.x + s.w * 0.5f;
+        float sy = s.y + s.h * 0.5f;
+
+        float dx = sx - px;
+        float dy = sy - py;
+        float dist2 = dx * dx + dy * dy;
+
+        float near = 60f; // tweak
+        if (dist2 > near * near) return;
+
+        // Draw prompt above shrine in UI space: WORLD -> SCREEN -> UI virtual
+        if (viewport == null) return;
+
+        tmpV3.set(sx, s.y + s.h + 10f, 0f);
+        viewport.project(tmpV3);
+
+        float sxToUi = width / (float) viewport.getScreenWidth();
+        float syToUi = height / (float) viewport.getScreenHeight();
+
+        int vx = viewport.getScreenX();
+        int vy = viewport.getScreenY();
+
+        float uiX = (tmpV3.x - vx) * sxToUi;
+        float uiY = (tmpV3.y - vy) * syToUi;
+
+        font.setColor(Color.WHITE);
+        font.getData().setScale(0.9f);
+        drawCenteredText("Press E", uiX, uiY);
+        font.getData().setScale(1.0f);
     }
 
     private void drawDimOverlay(float alpha) {
@@ -286,7 +379,7 @@ public class UserInterface {
         float startX = (width - totalW) / 2f;
         float baseY = height * 0.56f - star * 0.5f;
 
-        // ✅ FIX: get mouse in UI coordinates via uiViewport (works in fullscreen/letterboxing)
+        // Mouse in UI coords via uiViewport (works in fullscreen/letterboxing)
         getMouseUi(uiMouse);
         float mx = uiMouse.x;
         float my = uiMouse.y;
@@ -304,7 +397,6 @@ public class UserInterface {
         selectedUpgradeIndex = hovered;
 
         boolean canSelect = (upgradeInputTimer <= 0f);
-
         if (canSelect && hovered != -1 && Gdx.input.isButtonJustPressed(Input.Buttons.LEFT)) {
             world.chooseUpgrade(hovered);
             return;
@@ -515,6 +607,7 @@ public class UserInterface {
         Player p = world.getPlayer();
         if (p != null) p.draw(spriteBatch, delta);
     }
+
     // ----------------------------
     // HUD — SCREEN SPACE
     // ----------------------------
@@ -576,7 +669,6 @@ public class UserInterface {
     // ----------------------------
     // Damage popups: WORLD -> UI (screen-space)
     // ----------------------------
-    // Add at top of class (reuse to avoid alloc)
     private void drawDamagePopupsScreenSpace() {
         if (viewport == null) return;
 
@@ -693,6 +785,10 @@ public class UserInterface {
         iconSoul.dispose();
         iconKill.dispose();
         iconWave.dispose();
+
+        // NEW
+        shrineSheet.dispose();
+        // dropTextureRegion uses iconSoul, so nothing additional to dispose
 
         System.out.println("World dispose called");
     }

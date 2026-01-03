@@ -103,6 +103,9 @@ public class Main extends ApplicationAdapter {
     private float camZoom = 0.85f;  // < 1 = zoom IN, > 1 = zoom OUT
     private float followLerp = 12f; // higher = snappier follow
 
+    //Game state information
+    private boolean[][] cleared = new boolean[WORLD_H][WORLD_W];
+
     /** Call this from GameWorld (through a callback) to trigger screen shake. */
     public void addShake(float intensity, float duration) {
         shakeIntensity = Math.max(shakeIntensity, intensity);
@@ -253,6 +256,11 @@ public class Main extends ApplicationAdapter {
         world.setAudio(audio);
         world.setWeapon(broadsword);
         world.setScreenShake(this::addShake);
+        world.setDoorListener(this::handleDoorUsed);
+
+        //This marks the cell as cleared when a wave ends
+        world.setRoomClearListener(() -> cleared[worldCellY][worldCellX] = true);
+
 
         // Authoritative instances
         player = world.getPlayer();
@@ -403,6 +411,159 @@ public class Main extends ApplicationAdapter {
 
     private static float clampf(float v, float lo, float hi) {
         return Math.max(lo, Math.min(hi, v));
+    }
+
+    private void handleDoorUsed(Dir dir) {
+        if (worldRooms == null || world == null) return;
+
+        int nx = worldCellX + dir.dx;
+        int ny = worldCellY + dir.dy;
+
+        // bounds
+        if (nx < 0 || nx >= WORLD_W || ny < 0 || ny >= WORLD_H) return;
+
+        Room next = worldRooms[ny][nx];
+        if (next == null) return;
+
+        // Optional safety: ensure doors match (they should from WFC)
+        RoomTemplate curT = room != null ? room.getTemplate() : null;
+        RoomTemplate nextT = next.getTemplate();
+        if (curT == null || nextT == null) return;
+
+        if (dir == Dir.UP && (curT.up != nextT.down)) return;
+        if (dir == Dir.DOWN && (curT.down != nextT.up)) return;
+        if (dir == Dir.LEFT && (curT.left != nextT.right)) return;
+        if (dir == Dir.RIGHT && (curT.right != nextT.left)) return;
+
+        // Switch cell
+        worldCellX = nx;
+        worldCellY = ny;
+
+        // Activate room
+        room = next;
+        room.setViewport(viewport);
+
+        // Tell GameWorld to use it (this should rebuild doorways in GameWorld, clear per-room effects, etc.)
+        world.setRoom(room);
+
+        // Warp player to the actual doorway tile in the new room (opposite side)
+        warpPlayerToEntranceUsingDoorGrid(dir);
+        boolean start = !cleared[worldCellY][worldCellX];
+        world.onEnterRoom(start);
+
+        // Reset camera base so it doesn’t lerp across rooms
+        if (player != null) {
+            baseCamX = player.getX() + player.getWidth() * 0.5f;
+            baseCamY = player.getY() + player.getHeight() * 0.5f;
+        }
+    }
+
+    private void warpPlayerToEntranceUsingDoorGrid(Dir usedDir) {
+        if (player == null || room == null) return;
+
+        Dir enterSide = usedDir.opposite();
+
+        // Prefer matching along the axis so transitions feel “continuous”
+        float playerCenterX = player.getX() + player.getWidth() * 0.5f;
+        float playerCenterY = player.getY() + player.getHeight() * 0.5f;
+
+        Doorway target;
+        if (enterSide == Dir.UP || enterSide == Dir.DOWN) {
+            // choose door whose tileX best matches player's current x position
+            float preferTileX = playerCenterX / room.getTileSize();
+            target = findBestDoorway(room, enterSide, preferTileX);
+        } else {
+            // choose door whose tileY best matches player's current y position
+            float preferTileY = playerCenterY / room.getTileSize();
+            target = findBestDoorway(room, enterSide, preferTileY);
+        }
+
+        if (target == null) {
+            // No door found on that side (shouldn't happen if WFC is correct)
+            // Fallback: put player near center
+            float ts = room.getTileSize();
+            float mapW = room.getRoomWidth() * ts;
+            float mapH = room.getRoomHeight() * ts;
+            player.setX(mapW * 0.5f - player.getWidth() * 0.5f);
+            player.setY(mapH * 0.5f - player.getHeight() * 0.5f);
+            return;
+        }
+
+        float ts = room.getTileSize();
+        float mapW = room.getRoomWidth() * ts;
+        float mapH = room.getRoomHeight() * ts;
+
+        // Base position: center player on the door tile
+        float newX = target.getTileX() * ts + (ts - player.getWidth()) * 0.5f;
+        float newY = target.getTileY() * ts + (ts - player.getHeight()) * 0.5f;
+
+        // Push player *into* the room so they don't sit inside the doorway tile/wall edge
+        float inset = ts * 1.1f;
+        switch (enterSide) {
+            case UP:    newY -= inset; break; // door at top -> move down
+            case DOWN:  newY += inset; break; // door at bottom -> move up
+            case LEFT:  newX += inset; break; // door at left -> move right
+            case RIGHT: newX -= inset; break; // door at right -> move left
+        }
+
+        // Clamp inside room bounds
+        float pad = 2f;
+        newX = clampf(newX, pad, mapW - player.getWidth() - pad);
+        newY = clampf(newY, pad, mapH - player.getHeight() - pad);
+
+        player.setX(newX);
+        player.setY(newY);
+    }
+
+    private Doorway findBestDoorway(Room r, Dir side, float preferAxisTile) {
+        if (r == null) return null;
+
+        int w = r.getRoomWidth();
+        int h = r.getRoomHeight();
+
+        Doorway best = null;
+        float bestDist = Float.MAX_VALUE;
+
+        for (int ty = 0; ty < h; ty++) {
+            for (int tx = 0; tx < w; tx++) {
+                if (!isDoorSafe(r, tx, ty)) continue;
+                if (!tileBelongsToSide(tx, ty, w, h, side)) continue;
+
+                float axis = (side == Dir.UP || side == Dir.DOWN) ? tx : ty;
+                float dist = Math.abs(axis - preferAxisTile);
+
+                if (dist < bestDist) {
+                    bestDist = dist;
+                    best = new Doorway(side, tx, ty);
+                }
+            }
+        }
+
+        return best;
+    }
+
+    private boolean isDoorSafe(Room r, int tx, int tyWorld) {
+        try {
+            int h = r.getRoomHeight();
+            int tyData = (h - 1) - tyWorld;
+            return r.isDoor(tx, tyData);
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    /**
+     * Doors might be on the edge OR 1 tile in from edge, depending on your room art.
+     * This matches the “near edge” logic.
+     */
+    private boolean tileBelongsToSide(int tx, int ty, int roomW, int roomH, Dir side) {
+        switch (side) {
+            case UP:    return ty >= roomH - 2;
+            case DOWN:  return ty <= 1;
+            case LEFT:  return tx <= 1;
+            case RIGHT: return tx >= roomW - 2;
+        }
+        return false;
     }
 
     @Override
