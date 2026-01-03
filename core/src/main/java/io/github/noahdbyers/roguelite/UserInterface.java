@@ -282,7 +282,7 @@ public class UserInterface {
         float x = s.x;
         float y = s.y;
         float w = s.w;
-        float h = s.h;
+        float h = s.h * 2;
 
         // If your shrine uses a fixed size, you can ignore w/h and set constants.
         spriteBatch.draw(shrineTextureRegion, x, y, w, h);

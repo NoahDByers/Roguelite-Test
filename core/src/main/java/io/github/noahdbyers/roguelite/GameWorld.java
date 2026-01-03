@@ -930,7 +930,7 @@ public class GameWorld {
     }
 
     private void maybeSpawnShrine() {
-        if (rng.nextFloat() > 0.25f) return; // 25% chance
+        if (rng.nextFloat() > 0.9f) return; // 25% chance
 
         // find open spot (you already have open-spot helpers)
         float[] p = findFirstOpenSpotRect(32f, 32f, 0f);
