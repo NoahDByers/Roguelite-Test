@@ -119,6 +119,11 @@ public class UserInterface {
     private final Matrix4 identityTransform = new Matrix4();
     private final Matrix4 savedWorldProjection = new Matrix4();
 
+    // in PlayerCombat fields
+    private float lockedAimX, lockedAimY;
+    private float lockedDirX = 1f, lockedDirY = 0f;
+
+
     public UserInterface(float width, float height,
                          GameWorld world,
                          ShapeRenderer shapeRenderer,
@@ -215,7 +220,7 @@ public class UserInterface {
         Player p = world.getPlayer();
         if (w != null && p != null) {
             tmpMouseWorld.set(world.getAimWorldX(), world.getAimWorldY());
-            w.draw(spriteBatch, delta, p, tmpMouseWorld);
+            w.draw(spriteBatch, delta, p);
         }
 
         spriteBatch.end();
@@ -360,10 +365,18 @@ public class UserInterface {
     // Upgrade scene (SCREEN SPACE)
     // ----------------------------
     private void drawUpgradeScene(Upgrade[] offered) {
+        boolean shrineOpen = world.isShrineOpen();
+
         font.setColor(Color.WHITE);
         font.getData().setScale(1.15f);
-        drawCenteredText("Choose an Upgrade", width / 2f, height - 34f);
+        drawCenteredText(shrineOpen ? "Shrine" : "Choose an Upgrade", width / 2f, height - 34f);
         font.getData().setScale(1.0f);
+
+        if (shrineOpen) {
+            font.getData().setScale(0.95f);
+            drawCenteredText("Souls: " + world.getSouls() + "    (click to buy, ESC/E to close)", width / 2f, height - 58f);
+            font.getData().setScale(1.0f);
+        }
 
         float clusterW = width * CLUSTER_WIDTH_FRAC;
         float desiredStar = clamp(height * STAR_HEIGHT_FRAC, STAR_MIN, STAR_MAX);
@@ -398,8 +411,13 @@ public class UserInterface {
 
         boolean canSelect = (upgradeInputTimer <= 0f);
         if (canSelect && hovered != -1 && Gdx.input.isButtonJustPressed(Input.Buttons.LEFT)) {
-            world.chooseUpgrade(hovered);
-            return;
+            Upgrade up = (offered != null && hovered < offered.length) ? offered[hovered] : null;
+            if (up != null) {
+                if (!shrineOpen || world.canAffordUpgrade(hovered)) {
+                    world.chooseUpgrade(hovered);
+                    return;
+                }
+            }
         }
 
         for (int i = 0; i < UPGRADE_COUNT; i++) {
@@ -436,6 +454,27 @@ public class UserInterface {
                 if (tex == null) tex = fallbackCardTexture;
                 spriteBatch.draw(tex, dx, dy, drawSize, drawSize);
             }
+
+            // Shrine: show cost + dim if unaffordable
+            if (shrineOpen && up != null) {
+                int cost = world.getUpgradeCost(i);
+
+                boolean afford = world.canAffordUpgrade(i);
+                if (!afford) {
+                    Color c = spriteBatch.getColor();
+                    spriteBatch.setColor(0f, 0f, 0f, 0.55f);
+                    spriteBatch.draw(whitePixel, dx, dy, drawSize, drawSize);
+                    spriteBatch.setColor(c);
+                }
+
+                font.getData().setScale(0.85f);
+                font.setColor(afford ? Color.WHITE : new Color(1f, 0.55f, 0.55f, 1f));
+                String costText = cost + " Souls";
+                layout.setText(font, costText);
+                font.draw(spriteBatch, costText, dx + 8f, dy + 18f);
+                font.setColor(Color.WHITE);
+                font.getData().setScale(1.0f);
+            }
         }
 
         if (hovered != -1 && offered != null && hovered < offered.length) {
@@ -466,6 +505,15 @@ public class UserInterface {
                 font.setColor(Color.WHITE);
                 font.getData().setScale(1.05f);
                 drawCenteredText(safe(up.name), cx, panelY + panelH - 22f);
+
+                if (shrineOpen) {
+                    int cost = world.getUpgradeCost(hovered);
+                    boolean afford = world.canAffordUpgrade(hovered);
+                    font.getData().setScale(0.85f);
+                    font.setColor(afford ? Color.WHITE : new Color(1f, 0.55f, 0.55f, 1f));
+                    drawCenteredText("Cost: " + cost + " souls", cx, panelY + panelH - 44f);
+                    font.setColor(Color.WHITE);
+                }
 
                 font.getData().setScale(0.85f);
                 font.setColor(new Color(0.9f, 0.9f, 0.9f, 1f));

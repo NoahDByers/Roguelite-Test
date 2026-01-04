@@ -68,3 +68,5 @@ weapons/File 2025.png
 weapons/File.png
 weapons/iceWeapons.png
 weapons/swordSwing.png
+weapons/swordSwing2.png
+weapons/swordSwing3.png

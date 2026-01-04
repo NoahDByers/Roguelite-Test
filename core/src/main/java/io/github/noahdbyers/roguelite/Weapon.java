@@ -1,37 +1,40 @@
 package io.github.noahdbyers.roguelite;
 
-import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.g2d.TextureRegion;
-import com.badlogic.gdx.math.Vector2;
 
 import java.util.ArrayList;
 
 public class Weapon {
-    private String name;
+    private final String name;
     private float attackCooldown;
     private float attackCooldownTime;
-    private TextureRegion weaponTexture;
-    private ArrayList<TextureRegion> frames;
 
-    //Animation Tracking
-    private float width;
-    private float height;
-    private boolean animate;
-    private float animTimer = 0f;
-    private float frameTime = 0.03f;
-    private int storedFrame = 0;
-    private float drawX;
-    private float drawY;
+    private final TextureRegion weaponTexture;
+    private final ArrayList<TextureRegion> frames;
+
+    private final float width;
+    private final float height;
     private int damage;
 
-    //Combo tracking
-    private int combo = 0;
-    private int maxCombo = 2;
-    private float comboWindow = 0.05f;
+    // Animation
+    private boolean animate;
+    private float animTimer = 0f;
+    private final float frameTime = 0.03f;
+    private int storedFrame = 0;
 
+    // ✅ Locked swing direction (set once per attack)
+    private float swingDirX = 1f;
+    private float swingDirY = 0f;
+    private float swingAngleDeg = 0f;
 
-    Weapon(String name, float attackCooldownTime, float width, float height, int damage, TextureRegion weaponTexture, ArrayList<TextureRegion> frames) {
+    // Tuning
+    private final float originX = 16f;
+    private final float originY = 16f;
+    private final float handleOffset = 16f;
+
+    Weapon(String name, float attackCooldownTime, float width, float height, int damage,
+           TextureRegion weaponTexture, ArrayList<TextureRegion> frames) {
         this.name = name;
         this.attackCooldownTime = attackCooldownTime;
         this.weaponTexture = weaponTexture;
@@ -41,10 +44,37 @@ public class Weapon {
         this.damage = damage;
     }
 
-    public void draw(SpriteBatch spriteBatch, float delta, Player player, Vector2 mouseWorld) {
+    /** ✅ Call once at attack start to lock direction for the whole swing. */
+    public void startAttack(float playerX, float playerY, float playerW, float playerH, float aimX, float aimY) {
+        // Player "anchor" point (use your same logic if you want; here’s a stable center-ish anchor)
+        float px = playerX + playerW * 0.5f;
+        float py = playerY + playerH * 0.5f;
+
+        float dx = aimX - px;
+        float dy = aimY - py;
+        float len2 = dx * dx + dy * dy;
+        if (len2 < 0.0001f) {
+            dx = 1f; dy = 0f;
+            len2 = 1f;
+        }
+        float invLen = (float)(1.0 / Math.sqrt(len2));
+        swingDirX = dx * invLen;
+        swingDirY = dy * invLen;
+
+        // If your art points "up" by default, keep -90f. If it points right, use 0f.
+        swingAngleDeg = (float) Math.toDegrees(Math.atan2(swingDirY, swingDirX)) - 90f;
+
+        // Animation reset + cooldown
+        animate = true;
+        animTimer = 0f;
+        storedFrame = 0;
+        attackCooldown = attackCooldownTime;
+    }
+
+    public void draw(SpriteBatch spriteBatch, float delta, Player player) {
         if (!animate) return;
 
-        // --- Advance animation ---
+        // Advance animation
         animTimer += delta;
         while (animTimer >= frameTime) {
             animTimer -= frameTime;
@@ -56,130 +86,42 @@ public class Weapon {
             }
         }
 
-        float px;
-        float py = player.getY() + 35f;
+        // ✅ Recompute handle position each frame so sword stays attached to player,
+        // but direction stays locked.
+        float px = player.getX() + player.getWidth() * 0.5f;
+        float py = player.getY() + player.getHeight() * 0.5f;
 
-        // --- Player center (anchor point) ---
-        if(mouseWorld.y > player.getY()) {
-            px = player.getX() + 5f;
-        }
-        else {
-            px = player.getX() + 25f;
-        }
+        float handleX = px + swingDirX * handleOffset;
+        float handleY = py + swingDirY * handleOffset;
 
-        if(mouseWorld.x > player.getX()) {
-            py = player.getY() + 35;
-        }
-        else {
-            py = player.getY() + 5;
-        }
-
-        // --- Aim direction (player -> mouse) ---
-        float dirX = mouseWorld.x - px;
-        float dirY = mouseWorld.y - py;
-        float len = (float) Math.sqrt(dirX * dirX + dirY * dirY);
-
-        // Avoid NaNs when mouse is exactly on player
-        if (len < 0.0001f) {
-            dirX = 1f;
-            dirY = 0f;
-            len = 1f;
-        }
-        dirX /= len;
-        dirY /= len;
-
-        // --- Smear handle pivot in sprite space ---
-        // You said the handle is at (16,16) in the sprite.
-        float originX = 16f;
-        float originY = 16f;
-
-        // --- Where the HANDLE should be in world space ---
-        // This is the "spawn point" for the smear, NOT the center of the sprite.
-        float offset = 16f; // increase to push farther from player
-        float handleX = px + dirX * offset;
-        float handleY = py + dirY * offset;
-
-        // --- Rotation: aim direction ---
-        // If your smear art points "up" by default, you may need -90f.
-        // If it points "right" by default, use 0f.
-        float angleDeg = (float) Math.toDegrees(Math.atan2(dirY, dirX)) - 90f;
-
-        // --- Draw position so that origin lands exactly on the handle point ---
-        drawX = handleX - originX;
-        drawY = handleY - originY;
+        float drawX = handleX - originX;
+        float drawY = handleY - originY;
 
         spriteBatch.draw(
             frames.get(storedFrame),
             drawX, drawY,
-            originX, originY,     // pivot at the handle (16,16)
+            originX, originY,
             width, height,
             1f, 1f,
-            angleDeg
+            swingAngleDeg
         );
     }
 
-    public void startAttack(float delta) {
-        if(combo < maxCombo && delta < comboWindow) {
-            combo++;
-            animate = true;
-            animTimer = 0f;
-            storedFrame = 0;
-        }
-        else {
-            animate = true;
-            animTimer = 0f;
-            storedFrame = 0;
-            attackCooldown = attackCooldownTime;
-            combo = 0;
-        }
-
-    }
-
     public void updateTimers(float delta) {
-        if (attackCooldown > 0) {
+        if (attackCooldown > 0f) {
             attackCooldown -= delta;
-        }
-        else {
-            attackCooldown = 0;
+            if (attackCooldown < 0f) attackCooldown = 0f;
         }
     }
-    public float getAttackCooldown() {
-        return attackCooldown;
-    }
 
-    public float getAttackCooldownTime() {
-        return attackCooldownTime;
-    }
-    public TextureRegion getWeaponTexture() {
-        return weaponTexture;
-    }
-    public float getWidth() {
-        return width;
-    }
-    public float getHeight() {
-        return height;
-    }
-    public void setAttackCooldown(float attackCooldown) {
-        this.attackCooldown = attackCooldown;
-    }
+    public boolean isReady() { return attackCooldown <= 0f; }
 
-    public void setAttackCooldownTime(float attackCooldownTime) {
-        this.attackCooldownTime = attackCooldownTime;
-    }
+    public float getSwingDirX() { return swingDirX; }
+    public float getSwingDirY() { return swingDirY; }
 
-    public void setAnimateStatus(boolean status) {
-        this.animate = status;
-    }
-
-    public void setDamage(int damage) {
-        this.damage = damage;
-    }
-
-    public boolean isOnCooldown() {
-        return attackCooldown <= 0;
-    }
-
-    public int getDamage() {
-        return damage;
-    }
+    public int getDamage() { return damage; }
+    public void setDamage(int damage) { this.damage = damage; }
+    public float getAttackCooldownTime() { return attackCooldownTime; }
+    public void setAttackCooldownTime(float t) { attackCooldownTime = t; }
+    public void setAttackCooldown(float c) { attackCooldown = c; }
 }

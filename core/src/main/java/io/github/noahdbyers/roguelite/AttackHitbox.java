@@ -10,9 +10,10 @@ public class AttackHitbox {
 
     /** Distance from the attacker center to the hitbox center (world units). */
     public float reach;
-
     public float timeLeft;
     public int damage;
+    public float strength = 1f;   // 1 = normal, >1 = stronger
+    public float hitStop = 0.08f; // seconds; can be derived from strength
 
     /**
      * A melee hitbox that can be re-anchored each frame to follow the attacker.
