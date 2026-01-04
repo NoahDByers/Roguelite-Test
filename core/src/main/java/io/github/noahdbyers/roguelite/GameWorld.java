@@ -20,7 +20,7 @@ public class GameWorld {
     private float shrineInteractCooldown = 0f;
 
     private static final float SHRINE_INTERACT_RADIUS = 60f;
-    private static final int SHRINE_UPGRADE_COST = 3;
+    private static final int SHRINE_BASE_UPGRADE_COST = 3;
 
     public Shrine getShrine() { return shrine; }
     public boolean isShrineOpen() { return shrineOpen; }
@@ -193,6 +193,21 @@ public class GameWorld {
     public int getCoins() { return coins; }
     public int getSouls() { return souls; }
 
+    /** Cost UI helper for shrine purchases (0 if not applicable). */
+    public int getUpgradeCost(int index) {
+        if (!choosingUpgrade) return 0;
+        if (!shrineOpen || shrine == null) return 0;
+        if (index < 0 || index >= shrine.stock.length) return 0;
+        if (shrine.stock[index] == null) return 0;
+        return shrine.getCost(index);
+    }
+
+    /** UI helper: whether the player can afford a given shrine upgrade slot. */
+    public boolean canAffordUpgrade(int index) {
+        int cost = getUpgradeCost(index);
+        return cost > 0 && souls >= cost;
+    }
+
     public Upgrade[] getOfferedUpgrades() { return offeredUpgrades; }
     public ArrayList<DamagePopup> getDamagePopups() { return damagePopups; }
 
@@ -271,6 +286,9 @@ public class GameWorld {
             return;
         }
 
+        // Dead Cells-like: roll/dash input (processed before movement so it happens this frame)
+        handleDashInput();
+
         // Movement + timers
         if (room != null) player.update(room, room.getTileSize());
         player.updateTimers(delta);
@@ -283,6 +301,7 @@ public class GameWorld {
         }
 
         updateDropPickups();
+
         handlePlayerEnemyContact();
         updateMeleeHitboxes(delta);
 
@@ -602,7 +621,12 @@ public class GameWorld {
         if (p == null) return;
 
         Upgrade[] stock = new Upgrade[] { randomUpgrade(), randomUpgrade(), randomUpgrade() };
-        shrine = new Shrine(p[0], p[1], stock);
+        int[] costs = new int[] {
+            costFor(stock[0]),
+            costFor(stock[1]),
+            costFor(stock[2])
+        };
+        shrine = new Shrine(p[0], p[1], stock, costs);
     }
 
     public boolean isPlayerNearShrine() {
@@ -621,6 +645,7 @@ public class GameWorld {
 
     private boolean tryUseShrine() {
         if (player == null || shrine == null) return false;
+        if (shrineInteractCooldown > 0f) return false;
         if (!Gdx.input.isKeyJustPressed(Input.Keys.E)) return false;
         if (!isPlayerNearShrine()) return false;
 
@@ -657,15 +682,17 @@ public class GameWorld {
         clearOfferedUpgrades();
     }
 
-    public void buyShrineUpgrade(int index) {
-        if (!shrineOpen || shrine == null) return;
-        if (index < 0 || index >= shrine.stock.length) return;
+    /** Attempt to buy an upgrade from the shrine. Returns true on success. */
+    public boolean buyShrineUpgrade(int index) {
+        if (!shrineOpen || shrine == null) return false;
+        if (index < 0 || index >= shrine.stock.length) return false;
 
         Upgrade u = shrine.stock[index];
-        if (u == null) return;
+        if (u == null) return false;
 
-        int cost = costFor(u);
-        if (souls < cost) return;
+        int cost = shrine.getCost(index);
+        if (cost <= 0) return false;
+        if (souls < cost) return false;
 
         souls -= cost;
         applyUpgrade(u);
@@ -673,16 +700,35 @@ public class GameWorld {
         // remove purchased item from shrine inventory
         shrine.stock[index] = null;
 
-        // ✅ close the menu + sync UI array
-        shrineOpen = false;
-        choosingUpgrade = false;
-        for (int i = 0; i < offeredUpgrades.length; i++) {
-            offeredUpgrades[i] = null;
+        // keep shop open so you can buy multiple items (Dead Cells-like)
+        offeredUpgrades[index] = null;
+
+        // auto-close if everything is bought out
+        boolean anyLeft = false;
+        for (int i = 0; i < shrine.stock.length; i++) {
+            if (shrine.stock[i] != null) { anyLeft = true; break; }
+        }
+        if (!anyLeft) {
+            closeShopMenu();
         }
 
         shrineInteractCooldown = 0.2f;
+        return true;
     }
-    private int costFor(Upgrade u) { return SHRINE_UPGRADE_COST; }
+
+    private int costFor(Upgrade u) {
+        // You can tune this however you want. Simple + readable defaults:
+        // - baseline cost
+        // - modest scaling by wave so later shrines feel meaningful
+        int waveScale = Math.max(0, (wave - 1) / 3); // +1 every 3 waves
+        int base = SHRINE_BASE_UPGRADE_COST + waveScale;
+
+        // Small per-upgrade weight so "bigger" upgrades tend to cost a bit more.
+        if (u == null) return base;
+        if ("Vitality".equals(u.name)) return base + 1;
+        if ("Extra Damage".equals(u.name)) return base + 1;
+        return base;
+    }
 
     // -------------------- Combat / collisions --------------------
     private boolean overlaps(float ax, float ay, float aw, float ah,
@@ -703,6 +749,54 @@ public class GameWorld {
 
 
         }
+    }
+
+    // -------------------- Dash / roll input --------------------
+    private boolean isDashPressed() {
+        return Gdx.input.isButtonJustPressed(Input.Buttons.RIGHT)
+            || Gdx.input.isKeyJustPressed(Input.Keys.SPACE)
+            || Gdx.input.isKeyJustPressed(Input.Keys.SHIFT_LEFT);
+    }
+
+    /** Dead Cells-like: dash uses WASD direction if held, otherwise aim, otherwise facing. */
+    private Vector2 getDashDirection() {
+        float dx = 0f;
+        float dy = 0f;
+
+        if (Gdx.input.isKeyPressed(Input.Keys.A)) dx -= 1f;
+        if (Gdx.input.isKeyPressed(Input.Keys.D)) dx += 1f;
+        if (Gdx.input.isKeyPressed(Input.Keys.S)) dy -= 1f;
+        if (Gdx.input.isKeyPressed(Input.Keys.W)) dy += 1f;
+
+        Vector2 v;
+        if (dx * dx + dy * dy > 0.0001f) {
+            v = new Vector2(dx, dy).nor();
+        } else {
+            // fall back to aim direction (mouse)
+            v = getAimDirection();
+            if (v.len2() < 0.0001f) {
+                // final fall back to facing
+                Player.Facing f = player.getFacing();
+                if (f == Player.Facing.UP) v.set(0f, 1f);
+                else if (f == Player.Facing.DOWN) v.set(0f, -1f);
+                else if (f == Player.Facing.LEFT) v.set(-1f, 0f);
+                else v.set(1f, 0f);
+            } else {
+                v.nor();
+            }
+        }
+        return v;
+    }
+
+    private void handleDashInput() {
+        if (player == null) return;
+        if (!isDashPressed()) return;
+
+        Vector2 d = getDashDirection();
+        // roll-cancel for snappy combat
+        combat.cancelForDash();
+        player.startDash(d.x, d.y);
+        facePlayerToward(d);
     }
 
     private Vector2 getAimDirection() {
@@ -808,6 +902,8 @@ public class GameWorld {
                     enemy.getX(), enemy.getY(), enemy.getWidth(), enemy.getHeight()
                 )) {
                     enemy.takeDamage(hb.damage);
+                    // Tell combat system we connected a hit (for hit-confirm cancels/recovery)
+                    combat.notifyHitConfirmed();
                     alreadyHit.add(enemy);
 
                     float popX = enemy.getX() + enemy.getWidth() * 0.5f;

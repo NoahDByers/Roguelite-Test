@@ -419,6 +419,10 @@ public class Player extends Entity {
 
         dashTimer = dashDuration;
         dashCooldown = dashCooldownTime;
+
+        // Dead Cells-like feel: roll gives brief i-frames and breaks attack-facing lock.
+        invulnTimer = Math.max(invulnTimer, dashDuration + 0.05f);
+        attackLockTimer = 0f;
     }
 
     public void dispose() {
