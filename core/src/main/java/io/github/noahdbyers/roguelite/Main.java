@@ -100,7 +100,7 @@ public class Main extends ApplicationAdapter {
     private float baseCamY = VIRTUAL_HEIGHT / 2f;
 
     // Camera follow tuning
-    private float camZoom = 0.85f;  // < 1 = zoom IN, > 1 = zoom OUT
+    private float camZoom = 1f;  // < 1 = zoom IN, > 1 = zoom OUT
     private float followLerp = 12f; // higher = snappier follow
 
     //Game state information
@@ -205,7 +205,7 @@ public class Main extends ApplicationAdapter {
         Collections.addAll(titleScreenButtons, marketButton, settingsCogButton, playButton);
 
         // Weapon object
-        broadsword = new Weapon("Iron Broadsword", 0f, 64, 64, 1, broadswordRegion, swordSwing);
+        broadsword = new Weapon("Iron Broadsword", 0.2f, 64, 64, 1, broadswordRegion, swordSwing);
 
         // Rooms
         InitializeRooms createTool = new InitializeRooms(dungeonTiles);
@@ -248,8 +248,10 @@ public class Main extends ApplicationAdapter {
         // Keep viewport references in sync for any project/unproject or UI conversions
         room.setViewport(viewport);
 
-        // Spawn player (adjust spawn to your “center safe tile” later if desired)
-        player = new Player(100, 100, 170, 32, 32);
+        player = new Player(0, 0, 170, 32, 32); // temp
+        Vector2 spawn = findSafeSpawn(room, player.getWidth(), player.getHeight());
+        player.setX(spawn.x);
+        player.setY(spawn.y);
 
         // Build world
         world = new GameWorld(room, player, spriteBatch);
@@ -592,7 +594,117 @@ public class Main extends ApplicationAdapter {
         if (audio != null) audio.dispose();
     }
 
+    // Match your collision rule
+    private static final int COLLISION_SOLID = 76;
+
+    private Vector2 findSafeSpawn(Room room, float pw, float ph) {
+        if (room == null) return new Vector2(100, 100);
+
+        final int ts = room.getTileSize();
+        final int tilesW = room.getRoomWidth();
+        final int tilesH = room.getRoomHeight();
+        final float roomW = tilesW * ts;
+        final float roomH = tilesH * ts;
+
+        // 1) Try room center first
+        Vector2 center = new Vector2(roomW * 0.5f - pw * 0.5f, roomH * 0.5f - ph * 0.5f);
+        if (isSpawnRectOpen(room, center.x, center.y, pw, ph)) return center;
+
+        // 2) Random attempts (fast)
+        Random rng = new Random();
+        for (int i = 0; i < 600; i++) {
+            float x = rng.nextFloat() * (roomW - pw);
+            float y = rng.nextFloat() * (roomH - ph);
+            if (isSpawnRectOpen(room, x, y, pw, ph)) return new Vector2(x, y);
+        }
+
+        // 3) Deterministic scan (reliable)
+        for (int ty = 1; ty < tilesH - 1; ty++) {
+            for (int tx = 1; tx < tilesW - 1; tx++) {
+                float x = tx * ts + (ts - pw) * 0.5f;
+                float y = ty * ts + (ts - ph) * 0.5f;
+                if (isSpawnRectOpen(room, x, y, pw, ph)) return new Vector2(x, y);
+            }
+        }
+
+        // Worst-case fallback
+        return new Vector2(ts, ts);
+    }
+
+    private boolean isSpawnRectOpen(Room room, float x, float y, float w, float h) {
+        // Pad slightly so we don’t spawn hugging a wall
+        float pad = 2f;
+        float rx = x + pad;
+        float ry = y + pad;
+        float rw = Math.max(1f, w - pad * 2f);
+        float rh = Math.max(1f, h - pad * 2f);
+
+        // 1) Must not hit collision
+        if (rectHitsCollision(room, rx, ry, rw, rh)) return false;
+
+        // 2) Optional: don’t spawn on a door tile (if your Room exposes door grid)
+        // If you don’t have isDoor/getDoorsGrid accessible here, you can delete this block.
+        if (rectOverlapsDoorTile(room, rx, ry, rw, rh)) return false;
+
+        return true;
+    }
+
+    private boolean rectHitsCollision(Room room, float x, float y, float w, float h) {
+        int[][] col;
+        try { col = room.getCollisions(); }
+        catch (Throwable t) { return false; }
+
+        if (col == null) return false;
+
+        final int ts = room.getTileSize();
+        final int roomW = room.getRoomWidth();
+        final int roomH = room.getRoomHeight();
+
+        int left   = clampi((int)Math.floor(x / ts), 0, roomW - 1);
+        int right  = clampi((int)Math.floor((x + w - 1f) / ts), 0, roomW - 1);
+        int bottom = clampi((int)Math.floor(y / ts), 0, roomH - 1);
+        int top    = clampi((int)Math.floor((y + h - 1f) / ts), 0, roomH - 1);
+
+        for (int ty = bottom; ty <= top; ty++) {
+            int cy = (roomH - 1) - ty; // IMPORTANT: y-flip
+            for (int tx = left; tx <= right; tx++) {
+                if (col[cy][tx] == COLLISION_SOLID) return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean rectOverlapsDoorTile(Room room, float x, float y, float w, float h) {
+        final int ts = room.getTileSize();
+        final int roomW = room.getRoomWidth();
+        final int roomH = room.getRoomHeight();
+
+        int left   = clampi((int)Math.floor(x / ts), 0, roomW - 1);
+        int right  = clampi((int)Math.floor((x + w - 1f) / ts), 0, roomW - 1);
+        int bottom = clampi((int)Math.floor(y / ts), 0, roomH - 1);
+        int top    = clampi((int)Math.floor((y + h - 1f) / ts), 0, roomH - 1);
+
+        for (int ty = bottom; ty <= top; ty++) {
+            int srcY = (roomH - 1) - ty; // match the door grid convention you used in drawing
+            for (int tx = left; tx <= right; tx++) {
+                try {
+                    if (room.isDoor(tx, srcY)) return true;
+                } catch (Throwable ignored) {
+                    // If room.isDoor isn't available, just skip door checks.
+                    return false;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static int clampi(int v, int lo, int hi) {
+        return Math.max(lo, Math.min(hi, v));
+    }
+
     public void drawTitleScreen() {
         titleScreen = true;
     }
 }
+
+

@@ -5,7 +5,6 @@ import com.badlogic.gdx.Input;
 import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.g2d.TextureRegion;
-import com.badlogic.gdx.math.Rectangle;
 import com.badlogic.gdx.math.Vector2;
 
 import java.util.ArrayList;
@@ -15,36 +14,36 @@ import java.util.IdentityHashMap;
 import java.util.Random;
 
 public class GameWorld {
+    // -------------------- Shrine / shop --------------------
     private Shrine shrine;
     private boolean shrineOpen = false;
     private float shrineInteractCooldown = 0f;
-    public Shrine getShrine() { return shrine; }
-    public boolean isShrineOpen() { return shrineOpen; }
-    public void closeShrine() { shrineOpen = false; }
+
     private static final float SHRINE_INTERACT_RADIUS = 60f;
     private static final int SHRINE_UPGRADE_COST = 3;
 
-
+    public Shrine getShrine() { return shrine; }
+    public boolean isShrineOpen() { return shrineOpen; }
+    public void closeShrine() {
+        shrineOpen = false;
+        choosingUpgrade = false;
+    }
 
     // -------------------- Door system --------------------
-    public interface DoorListener {
-        void onDoorUsed(Dir dir);
-    }
+    public interface DoorListener { void onDoorUsed(Dir dir); }
     public interface RoomClearListener { void onRoomCleared(); }
-    private RoomClearListener roomClearListener;
-    public void setRoomClearListener(RoomClearListener l){ roomClearListener = l; }
 
     private DoorListener doorListener;
+    private RoomClearListener roomClearListener;
+
+    public void setDoorListener(DoorListener l) { this.doorListener = l; }
+    public void setRoomClearListener(RoomClearListener l){ roomClearListener = l; }
+
     private float doorCooldown = 0f;
     private static final float DOOR_COOLDOWN_TIME = 0.25f;
-    private static final int DOOR_EDGE_BAND = 2;   // doors are usually within 0..1 or H-2..H-1
-    private static final int DOOR_SCAN_RADIUS = 2; // tiles around player to scan
-    private static final float DOOR_INTERACT_PAD = 10f; // expand door tile for easier interaction
-
-    // Derived from the room's door grid (room.isDoor(x,y))
-    private final ArrayList<Doorway> doorways = new ArrayList<>();
-    private final Rectangle tmpRectA = new Rectangle();
-    private final Rectangle tmpRectB = new Rectangle();
+    private static final int DOOR_EDGE_BAND = 2;
+    private static final int DOOR_SCAN_RADIUS = 2;
+    private static final float DOOR_INTERACT_PAD = 10f;
 
     // -------------------- Core state --------------------
     private Room room;
@@ -61,6 +60,7 @@ public class GameWorld {
     private int wave = 1;
     private boolean waveActive = false;
 
+    // Kept for UI compatibility (we use this as "shop open")
     private boolean choosingUpgrade = false;
     private final Upgrade[] offeredUpgrades = new Upgrade[3];
 
@@ -68,19 +68,7 @@ public class GameWorld {
     private float aimWorldX = 0f;
     private float aimWorldY = 0f;
 
-    // Difficulty/spawn (left as-is)
-    private float spawnTimer = 0f;
-    private float difficultyTimer = 0f;
-
-    private final float startSpawnInterval = 1.0f;
-    private final float startMinSpawnInterval = 0.5f;
-    private final int startMaxEnemies = 20;
-
-    private float spawnInterval = startSpawnInterval;
-    private float minSpawnInterval = startMinSpawnInterval;
-    private int maxEnemies = startMaxEnemies;
-
-    // Current Weapon
+    // Weapon
     private Weapon weapon;
 
     // Damage popups
@@ -90,9 +78,13 @@ public class GameWorld {
     private final ArrayList<AttackHitbox> meleeHitboxes = new ArrayList<>();
     private final IdentityHashMap<AttackHitbox, HashSet<Enemy>> hitboxHits = new IdentityHashMap<>();
 
+    // ✅ NEW: combat state machine (owns attack execution)
+    private final PlayerCombat combat = new PlayerCombat();
+    public PlayerCombat getCombat() { return combat; }
+
     // -------------------- Freeze Frames (Hit Stop) --------------------
     private float freezeTimer = 0f;
-    private final float FREEZE_DURATION = 0.08f;
+    private static final float FREEZE_DURATION = 0.08f;
 
     private final IdentityHashMap<AttackHitbox, Boolean> hitboxFreezeUsed = new IdentityHashMap<>();
     private final IdentityHashMap<AttackHitbox, Boolean> hitboxHitSfxUsed = new IdentityHashMap<>();
@@ -110,9 +102,7 @@ public class GameWorld {
     private final ArrayList<TextureRegion> movementUpgrade = new ArrayList<>();
 
     // Screen shake callback
-    public interface ScreenShake {
-        void addShake(float intensity, float duration);
-    }
+    public interface ScreenShake { void addShake(float intensity, float duration); }
     private ScreenShake shake;
 
     private static final float HIT_SHAKE_INTENSITY = 6f;
@@ -122,12 +112,12 @@ public class GameWorld {
 
     private final Texture cardTexture = Utility.loadNearest("ui/upgrade_card.png");
     private final Random rng = new Random();
-    //Enemy Drops
+
+    // Enemy Drops
     private final ArrayList<Drop> drops = new ArrayList<>();
     public ArrayList<Drop> getDrops() { return drops; }
 
-
-    // -------------------- Collision rules --------------------
+    // Collision
     private static final int COLLISION_SOLID = 76;
 
     public GameWorld(Room room, Player player, SpriteBatch spriteBatch) {
@@ -135,7 +125,6 @@ public class GameWorld {
         this.player = player;
         this.spriteBatch = spriteBatch;
 
-        // Build upgrade animations (your original)
         Collections.addAll(healthUpgrade,
             new TextureRegion(healthUpgradeSheet, 0, 0, 64, 64),
             new TextureRegion(healthUpgradeSheet, 64, 0, 64, 64),
@@ -189,7 +178,6 @@ public class GameWorld {
         );
 
         restart();
-        rebuildDoorways(); // ✅ build door triggers from room's door grid
     }
 
     // -------------------- Getters / setters --------------------
@@ -198,7 +186,7 @@ public class GameWorld {
     public ArrayList<Enemy> getEnemies() { return enemies; }
 
     public boolean isGameOver() { return gameOver; }
-    public boolean isChoosingUpgrade() { return choosingUpgrade; }
+    public boolean isChoosingUpgrade() { return choosingUpgrade; } // UI uses this
 
     public int getEnemiesKilled() { return enemiesKilled; }
     public int getWave() { return wave; }
@@ -213,17 +201,11 @@ public class GameWorld {
 
     public ArrayList<AttackHitbox> getMeleeHitboxes() { return meleeHitboxes; }
 
-    public void setWeapon(Weapon weapon) {
-        this.weapon = weapon;
-        if (this.weapon != null) this.weapon.setAttackCooldown(0f);
-    }
+    public void setWeapon(Weapon weapon) { this.weapon = weapon; }
     public Weapon getWeapon() { return weapon; }
 
     public void setAudio(AudioManager audio) { this.audio = audio; }
-
     public void setScreenShake(ScreenShake shake) { this.shake = shake; }
-
-    public void setDoorListener(DoorListener l) { this.doorListener = l; }
 
     public void setAimWorld(float x, float y) {
         aimWorldX = x;
@@ -242,41 +224,57 @@ public class GameWorld {
         }
         if (gameOver) return;
 
-        // Door cooldown decays even during freeze/upgrade (prevents stuck)
+        // Cooldowns tick regardless
         doorCooldown = Math.max(0f, doorCooldown - delta);
+        shrineInteractCooldown = Math.max(0f, shrineInteractCooldown - delta);
 
-// If player presses E at shrine, consume interaction and DON'T also use a door.
-        if (!choosingUpgrade) {
-            if (tryUseShrine()) {
-                return; // we opened menu; stop this frame so no other interactions happen
-            }
-        }
-
-        if (doorCooldown <= 0f) checkDoorUse();
-
+        // Freeze stop (hitstop)
         if (freezeTimer > 0f) {
             freezeTimer -= delta;
             if (freezeTimer < 0f) freezeTimer = 0f;
             return;
         }
+
+        // ----------------------------
+        // SHOP STATE (blocks gameplay)
+        // ----------------------------
         if (choosingUpgrade) {
             if (player != null) player.setAnimationPaused(true);
-            handleUpgradeInput();
+
+            // Close shop
+            if (Gdx.input.isKeyJustPressed(Input.Keys.ESCAPE) || Gdx.input.isKeyJustPressed(Input.Keys.E)) {
+                closeShopMenu();
+            }
+            return; // IMPORTANT: while menu open, do nothing else
+        }
+
+        // Not in shop
+        if (player != null) player.setAnimationPaused(false);
+
+        // ----------------------------
+        // Interactions (E)
+        // shrine has priority over doors
+        // ----------------------------
+        if (tryUseShrine()) {
+            // opened shop this frame
+            if (player != null) player.setAnimationPaused(true);
             return;
-        } else {
-            if (player != null) player.setAnimationPaused(false);
         }
 
+        if (doorCooldown <= 0f) {
+            checkDoorUse();
+        }
+
+        // Ensure player exists
         if (player == null) {
-            ensurePlayer();
-            if (player == null) return;
+            player = new Player(300, 300, 170, 32, 32);
+            return;
         }
 
-        // Player + enemies
-        if (room != null) {
-            player.update(room, room.getTileSize());
-        }
+        // Movement + timers
+        if (room != null) player.update(room, room.getTileSize());
         player.updateTimers(delta);
+
         if (weapon != null) weapon.updateTimers(delta);
 
         for (Enemy e : enemies) {
@@ -288,21 +286,12 @@ public class GameWorld {
         handlePlayerEnemyContact();
         updateMeleeHitboxes(delta);
 
-        // Attack input (kept as you had it)
-        if (Gdx.input.isButtonJustPressed(Input.Buttons.LEFT) && weapon != null) {
-            Vector2 aimDir = getAimDirection();
-            facePlayerToward(aimDir);
-
-            // NOTE: keep your semantics as-is
-            if (weapon.isOnCooldown()) {
-                player.startDash(aimDir.x, aimDir.y);
-                weapon.startAttack(delta);
-                if (audio != null) audio.playSwordHit();
-
-                player.startAttackLock(0.25f);
-                performMeleeAttack(getAimWorld());
-            }
+        // Combat system owns attacks
+        if (Gdx.input.isButtonJustPressed(Input.Buttons.LEFT)) {
+            combat.bufferAttack();
+            facePlayerToward(getAimDirection());
         }
+        combat.update(delta, this);
 
         // Damage popups
         for (int i = damagePopups.size() - 1; i >= 0; i--) {
@@ -310,156 +299,145 @@ public class GameWorld {
             p.update(delta);
             if (p.isDead()) damagePopups.remove(i);
         }
-        shrineInteractCooldown = Math.max(0f, shrineInteractCooldown - delta);
-        if (shrine != null && shrineInteractCooldown <= 0f) {
-            if (Gdx.input.isKeyJustPressed(Input.Keys.E) && playerNearShrine()) {
-                shrineOpen = !shrineOpen;
-                shrineInteractCooldown = 0.2f;
-            }
-        }
 
-        // Waves
+        // Room cleared
         if (waveActive && enemies.isEmpty()) {
             waveActive = false;
             wave++;
             if (roomClearListener != null) roomClearListener.onRoomCleared();
-            maybeSpawnShrine(); // new
+            maybeSpawnShrine();
         }
 
         if (player.getHealth() <= 0) gameOver = true;
     }
 
-    // -------------------- Doors: derived from room door grid --------------------
 
-    /**
-     * Rebuild cached Doorway list by scanning room.isDoor(x,y).
-     * This supports rooms where doors are in different tile positions.
-     */
-    private void rebuildDoorways() {
-        doorways.clear();
-        if (room == null) return;
-
-        int w = room.getRoomWidth();
-        int h = room.getRoomHeight();
-
-        for (int ty = 0; ty < h; ty++) {
-            for (int tx = 0; tx < w; tx++) {
-                if (!isDoorSafe(tx, ty)) continue;
-
-                Dir dir = inferDoorDirFromTile(tx, ty, w, h);
-                if (dir == null) continue;
-
-                doorways.add(new Doorway(dir, tx, ty));
-            }
-        }
-    }
-
-    private boolean isDoorSafe(int tx, int ty) {
-        try {
-            return room.isDoor(tx, ty);
-        } catch (Throwable t) {
-            return false;
-        }
-    }
-
-    /**
-     * Infers which side the door belongs to.
-     * Works even if a door tile is 1 tile in from the edge (common in some layouts).
-     */
-    private static Dir inferDoorDirFromTile(int tx, int ty, int roomW, int roomH) {
-        // Strong edge checks first
-        if (ty == roomH - 1) return Dir.UP;
-        if (ty == 0) return Dir.DOWN;
-        if (tx == 0) return Dir.LEFT;
-        if (tx == roomW - 1) return Dir.RIGHT;
-
-        // If doors are placed 1 tile in (e.g., y==roomH-2), still treat as that side
-        if (ty >= roomH - 2) return Dir.UP;
-        if (ty <= 1) return Dir.DOWN;
-        if (tx <= 1) return Dir.LEFT;
-        if (tx >= roomW - 2) return Dir.RIGHT;
-
-        // Otherwise unknown (door placed weirdly)
-        return null;
-    }
-
+    // -------------------- Doors --------------------
     private void checkDoorUse() {
         if (player == null || room == null) return;
-
-        // Only when pressing E (not movement keys)
         if (!Gdx.input.isKeyJustPressed(Input.Keys.E)) return;
 
         Dir dir = findInteractableDoorDir();
         if (dir == null) return;
 
-        triggerDoor(dir);
-    }
-
-    private boolean playerOverlapsAnyDoor(Dir want) {
-        int ts = room.getTileSize();
-
-        // Player rect
-        tmpRectA.set(player.getX(), player.getY(), player.getWidth(), player.getHeight());
-
-        for (int i = 0; i < doorways.size(); i++) {
-            Doorway d = doorways.get(i);
-            if (d.getDir() != want) continue;
-
-            // Door tile rect in world coords
-            float dx = d.getTileX() * ts;
-            float dy = d.getTileY() * ts;
-
-            // Slightly "fatter" trigger makes it feel better (optional)
-            tmpRectB.set(dx, dy, ts, ts);
-
-            if (tmpRectA.overlaps(tmpRectB)) return true;
-        }
-        return false;
-    }
-
-    private void triggerDoor(Dir dir) {
         doorCooldown = DOOR_COOLDOWN_TIME;
         if (doorListener != null) doorListener.onDoorUsed(dir);
     }
 
-    /**
-     * Optional helper for Main when placing player in the next room:
-     * returns the "best" doorway tile for a side (first found).
-     */
-    public Doorway findDoorway(Dir side) {
-        if (room == null) return null;
-        if (doorways.isEmpty()) rebuildDoorways();
+    private Dir findInteractableDoorDir() {
+        int ts = room.getTileSize();
+        int roomW = room.getRoomWidth();
+        int roomH = room.getRoomHeight();
 
-        for (Doorway d : doorways) {
-            if (d.getDir() == side) return d;
+        float px = player.getX();
+        float py = player.getY();
+        float pw = player.getWidth();
+        float ph = player.getHeight();
+
+        float pcx = px + pw * 0.5f;
+        float pcy = py + ph * 0.5f;
+
+        int pTileX = (int)Math.floor(pcx / ts);
+        int pTileY = (int)Math.floor(pcy / ts);
+
+        Dir bestDir = null;
+        float bestDist2 = Float.MAX_VALUE;
+
+        for (int dy = -DOOR_SCAN_RADIUS; dy <= DOOR_SCAN_RADIUS; dy++) {
+            for (int dx = -DOOR_SCAN_RADIUS; dx <= DOOR_SCAN_RADIUS; dx++) {
+                int tx = pTileX + dx;
+                int tyWorld = pTileY + dy;
+
+                if (tx < 0 || tx >= roomW || tyWorld < 0 || tyWorld >= roomH) continue;
+                if (!isDoorWorld(tx, tyWorld, roomH)) continue;
+
+                float doorX = tx * ts;
+                float doorY = tyWorld * ts;
+
+                float rx = doorX - DOOR_INTERACT_PAD;
+                float ry = doorY - DOOR_INTERACT_PAD;
+                float rw = ts + DOOR_INTERACT_PAD * 2f;
+                float rh = ts + DOOR_INTERACT_PAD * 2f;
+
+                if (!overlaps(px, py, pw, ph, rx, ry, rw, rh)) continue;
+
+                Dir dir = dirFromDoorTile(tx, tyWorld, roomW, roomH);
+                if (dir == null) continue;
+
+                float cx = doorX + ts * 0.5f;
+                float cy = doorY + ts * 0.5f;
+                float ddx = cx - pcx;
+                float ddy = cy - pcy;
+                float d2 = ddx * ddx + ddy * ddy;
+
+                if (d2 < bestDist2) {
+                    bestDist2 = d2;
+                    bestDir = dir;
+                }
+            }
         }
+
+        return bestDir;
+    }
+
+    private boolean isDoorWorld(int tx, int tyWorld, int roomH) {
+        int tyData = (roomH - 1) - tyWorld;
+        try {
+            return room.isDoor(tx, tyData);
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    private Dir dirFromDoorTile(int tx, int tyWorld, int roomW, int roomH) {
+        if (tyWorld >= roomH - DOOR_EDGE_BAND) return Dir.UP;
+        if (tyWorld < DOOR_EDGE_BAND) return Dir.DOWN;
+        if (tx < DOOR_EDGE_BAND) return Dir.LEFT;
+        if (tx >= roomW - DOOR_EDGE_BAND) return Dir.RIGHT;
         return null;
     }
 
-    // Call this when Main changes rooms
+    // -------------------- Room transitions --------------------
     public void setRoom(Room newRoom) {
         this.room = newRoom;
 
-        // Door system must rebuild because door layout differs per-room
-        rebuildDoorways();
-
-        // Clear per-room visuals/combat artifacts
+        // clear transient stuff
+        enemies.clear();
         meleeHitboxes.clear();
         damagePopups.clear();
+        drops.clear();
 
-        // If you want enemies to persist across rooms later, remove this:
-        enemies.clear();
+        shrine = null;
+        shrineOpen = false;
+        choosingUpgrade = false;
+
         waveActive = false;
+    }
+
+    /** Call from Main when you enter a room and want the wave to start. */
+    public void onEnterRoom(boolean shouldStartWave) {
+        enemies.clear();
+        meleeHitboxes.clear();
+        damagePopups.clear();
+        drops.clear();
+
+        shrine = null;
+        shrineOpen = false;
+        choosingUpgrade = false;
+
+        waveActive = false;
+
+        if (shouldStartWave) startWave();
     }
 
     // -------------------- Restart --------------------
     public void restart() {
         gameOver = false;
 
-        ensurePlayerFresh();
-
         enemies.clear();
         meleeHitboxes.clear();
+        damagePopups.clear();
+        drops.clear();
 
         hitboxHits.clear();
         hitboxFreezeUsed.clear();
@@ -468,37 +446,14 @@ public class GameWorld {
 
         freezeTimer = 0f;
 
-        spawnTimer = 0f;
-        difficultyTimer = 0f;
-        spawnInterval = startSpawnInterval;
-        minSpawnInterval = startMinSpawnInterval;
-        maxEnemies = startMaxEnemies;
-
         enemiesKilled = 0;
         wave = 1;
         waveActive = false;
 
         choosingUpgrade = false;
+        shrineOpen = false;
+        shrine = null;
         clearOfferedUpgrades();
-
-        doorCooldown = 0f;
-        rebuildDoorways();
-    }
-
-    private void ensurePlayer() {
-        if (player != null) return;
-        player = new Player(100, 250, 140f, 24f, 24f);
-    }
-
-    private void ensurePlayerFresh() {
-        if (player == null) {
-            ensurePlayer();
-            return;
-        }
-        float w = player.getWidth();
-        float h = player.getHeight();
-        float spd = player.getSpeed();
-        player = new Player(100, 250, spd, w, h);
     }
 
     // -------------------- Waves / spawning --------------------
@@ -516,8 +471,6 @@ public class GameWorld {
     }
 
     private void spawnZombieWithSpeed(float speed) {
-        if (enemies.size() >= maxEnemies) return;
-        if (player == null) ensurePlayer();
         if (room == null) return;
 
         final int tileSize = room.getTileSize();
@@ -583,7 +536,7 @@ public class GameWorld {
         top    = clamp(top,    0, roomH - 1);
 
         for (int ty = bottom; ty <= top; ty++) {
-            int cy = (roomH - 1) - ty; // match your flip
+            int cy = (roomH - 1) - ty; // match flip
             for (int tx = left; tx <= right; tx++) {
                 if (col[cy][tx] == COLLISION_SOLID) return true;
             }
@@ -623,7 +576,115 @@ public class GameWorld {
         return null;
     }
 
-    // -------------------- Combat / upgrades --------------------
+    // -------------------- Drops --------------------
+    private void updateDropPickups() {
+        if (player == null) return;
+
+        float px = player.getX(), py = player.getY();
+        float pw = player.getWidth(), ph = player.getHeight();
+
+        for (int i = drops.size() - 1; i >= 0; i--) {
+            Drop d = drops.get(i);
+            if (d == null) continue;
+
+            if (overlaps(px, py, pw, ph, d.x, d.y, d.w, d.h)) {
+                souls += d.value;
+                drops.remove(i);
+            }
+        }
+    }
+
+    // -------------------- Shrine (shop) --------------------
+    private void maybeSpawnShrine() {
+        if (rng.nextFloat() > 0.9f) return; // 10% chance
+
+        float[] p = findFirstOpenSpotRect(32f, 32f, 0f);
+        if (p == null) return;
+
+        Upgrade[] stock = new Upgrade[] { randomUpgrade(), randomUpgrade(), randomUpgrade() };
+        shrine = new Shrine(p[0], p[1], stock);
+    }
+
+    public boolean isPlayerNearShrine() {
+        if (player == null || shrine == null) return false;
+
+        float px = player.getX() + player.getWidth() * 0.5f;
+        float py = player.getY() + player.getHeight() * 0.5f;
+
+        float sx = shrine.x + shrine.w * 0.5f;
+        float sy = shrine.y + shrine.h * 0.5f;
+
+        float dx = sx - px;
+        float dy = sy - py;
+        return (dx * dx + dy * dy) <= (SHRINE_INTERACT_RADIUS * SHRINE_INTERACT_RADIUS);
+    }
+
+    private boolean tryUseShrine() {
+        if (player == null || shrine == null) return false;
+        if (!Gdx.input.isKeyJustPressed(Input.Keys.E)) return false;
+        if (!isPlayerNearShrine()) return false;
+
+        openShrineMenu();
+        return true; // prevents E from also using a door this frame
+    }
+
+    private void openShrineMenu() {
+        shrineOpen = true;
+        choosingUpgrade = true;
+
+        // Copy shrine stock into the UI array the UI already draws
+        for (int i = 0; i < offeredUpgrades.length; i++) {
+            offeredUpgrades[i] = (shrine != null && i < shrine.stock.length) ? shrine.stock[i] : null;
+        }
+    }
+
+    // UI calls this on click
+    public void chooseUpgrade(int index) {
+        if (!choosingUpgrade) return;
+        if (index < 0 || index >= offeredUpgrades.length) return;
+
+        // If we're in shrine mode, purchases use shrine rules
+        if (shrineOpen && shrine != null) {
+            buyShrineUpgrade(index);
+            return;
+        }
+
+        // Fallback (if you ever re-enable wave-choice upgrades)
+        Upgrade u = offeredUpgrades[index];
+        if (u == null) return;
+        applyUpgrade(u);
+        choosingUpgrade = false;
+        clearOfferedUpgrades();
+    }
+
+    public void buyShrineUpgrade(int index) {
+        if (!shrineOpen || shrine == null) return;
+        if (index < 0 || index >= shrine.stock.length) return;
+
+        Upgrade u = shrine.stock[index];
+        if (u == null) return;
+
+        int cost = costFor(u);
+        if (souls < cost) return;
+
+        souls -= cost;
+        applyUpgrade(u);
+
+        // remove purchased item from shrine inventory
+        shrine.stock[index] = null;
+
+        // ✅ close the menu + sync UI array
+        shrineOpen = false;
+        choosingUpgrade = false;
+        for (int i = 0; i < offeredUpgrades.length; i++) {
+            offeredUpgrades[i] = null;
+        }
+
+        shrineInteractCooldown = 0.2f;
+    }
+    private int costFor(Upgrade u) { return SHRINE_UPGRADE_COST; }
+
+    // -------------------- Combat / collisions --------------------
     private boolean overlaps(float ax, float ay, float aw, float ah,
                              float bx, float by, float bw, float bh) {
         return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
@@ -646,69 +707,15 @@ public class GameWorld {
         }
     }
 
-    private void beginUpgradeChoice() {
-        choosingUpgrade = true;
-        generateOfferedUpgrades();
-    }
-
-    private void handleUpgradeInput() {
-        // UI calls chooseUpgrade(index) on click; keep input here empty if desired
-    }
-
-    private void generateOfferedUpgrades() {
-        offeredUpgrades[0] = randomUpgrade();
-        offeredUpgrades[1] = randomUpgrade();
-        offeredUpgrades[2] = randomUpgrade();
-    }
-
-    private void clearOfferedUpgrades() {
-        offeredUpgrades[0] = null;
-        offeredUpgrades[1] = null;
-        offeredUpgrades[2] = null;
-    }
-
-    private Upgrade randomUpgrade() {
-        int r = rng.nextInt(4);
-        if (r == 0) return new Upgrade("Rapid Fire", "Fire rate +20%", fireRateUpgrade);
-        if (r == 1) return new Upgrade("Runner", "Move speed +15%", movementUpgrade);
-        if (r == 2) return new Upgrade("Vitality", "Max HP +1 and heal 1", healthUpgrade);
-        return new Upgrade("Extra Damage", "Damage +1", damageUpgrade);
-    }
-
-    public void chooseUpgrade(int index) {
-        if (!choosingUpgrade) return;
-        if (index < 0 || index >= offeredUpgrades.length) return;
-        applyUpgrade(offeredUpgrades[index]);
-    }
-
-    private void applyUpgrade(Upgrade u) {
-        if (u == null || player == null) return;
-
-        if (u.name.equals("Rapid Fire")) {
-            if (weapon != null) weapon.setAttackCooldownTime(Math.max(0.05f, weapon.getAttackCooldownTime() * 0.8f));
-        } else if (u.name.equals("Runner")) {
-            player.setSpeed(player.getSpeed() * 1.15f);
-        } else if (u.name.equals("Vitality")) {
-            player.increaseMaxHealth(1);
-            player.heal(1);
-        } else if (u.name.equals("Extra Damage")) {
-            if (weapon != null) weapon.setDamage(weapon.getDamage() + 1);
-        }
-
-        choosingUpgrade = false;
-        clearOfferedUpgrades();
-    }
-
     private Vector2 getAimDirection() {
         Vector2 mouse = new Vector2(aimWorldX, aimWorldY);
-
         float px = player.getX() + player.getWidth() / 2f;
         float py = player.getY() + player.getHeight() / 2f;
-
         return mouse.sub(px, py);
     }
 
     private void facePlayerToward(Vector2 dir) {
+        if (player == null) return;
         if (Math.abs(dir.x) > Math.abs(dir.y)) {
             player.setFacing(dir.x > 0 ? Player.Facing.RIGHT : Player.Facing.LEFT);
         } else {
@@ -716,14 +723,29 @@ public class GameWorld {
         }
     }
 
-    private void performMeleeAttack(Vector2 mouseWorld) {
+    // ✅ Called by PlayerCombat when hitbox should fire
+    // Keep old signature for safety (defaults to strength 1)
+
+    // Small helper inside GameWorld
+    private static float clampf(float v, float lo, float hi) {
+        return Math.max(lo, Math.min(hi, v));
+    }
+
+    // Universal melee attack: caller supplies a direction (can be aim direction, locked dir, etc)
+// strength controls hitstop/knockback feel
+    void performMeleeAttackDir(float dirX, float dirY, float strength) {
+        if (player == null) return;
+
+        // Normalize direction (safe)
+        Vector2 dir = new Vector2(dirX, dirY);
+        if (dir.len2() < 0.0001f) dir.set(1f, 0f);
+        dir.nor();
+
+        // Player center
         float px = player.getX() + player.getWidth() * 0.5f;
         float py = player.getY() + player.getHeight() * 0.5f;
 
-        Vector2 dir = new Vector2(mouseWorld.x - px, mouseWorld.y - py);
-        if (dir.len2() < 0.0001f) dir.set(1, 0);
-        dir.nor();
-
+        // Attack shape/timing (tune these per attack later)
         float reach = 24f;
         float hitW = 64f;
         float hitH = 64f;
@@ -732,6 +754,15 @@ public class GameWorld {
         int damage = (weapon != null) ? weapon.getDamage() : 1;
 
         AttackHitbox hb = new AttackHitbox(hitW, hitH, dir, reach, duration, damage, px, py);
+
+        // ✅ Strength controls "impact feel"
+        hb.strength = Math.max(0.5f, strength);
+
+        // ✅ Hitstop derived from strength (tune these)
+        float base = 0.045f;                          // baseline hitstop
+        float extra = 0.045f * (hb.strength - 1f);    // strength adds stop
+        hb.hitStop = clampf(base + extra, 0.02f, 0.12f);
+
         meleeHitboxes.add(hb);
         hitboxHits.put(hb, new HashSet<>());
 
@@ -780,6 +811,8 @@ public class GameWorld {
                 )) {
                     enemy.takeDamage(hb.damage);
                     alreadyHit.add(enemy);
+                    float stun = stunFromStrength(hb.strength);
+                    enemy.applyHitstun(stun);
 
                     float popX = enemy.getX() + enemy.getWidth() * 0.5f;
                     float popY = enemy.getY() + enemy.getHeight() + 10f;
@@ -788,10 +821,9 @@ public class GameWorld {
                     enemy.takeKnockback(hb.dir.x, hb.dir.y, 400f);
 
                     if (enemy.isDead()) {
-                        // spawn a drop at enemy center
                         float dx = enemy.getX() + enemy.getWidth() * 0.5f;
                         float dy = enemy.getY() + enemy.getHeight() * 0.5f;
-                        drops.add(new Drop(dx - 6f, dy - 6f, 1)); // value=1 for now
+                        drops.add(new Drop(dx - 6f, dy - 6f, 1));
 
                         enemies.remove(e);
                         enemiesKilled++;
@@ -803,12 +835,19 @@ public class GameWorld {
                     }
 
                     if (!freezeUsed) {
-                        freezeTimer = FREEZE_DURATION;
+                        // ✅ scale hitstop by attack strength
+                        freezeTimer = Math.max(freezeTimer, hb.hitStop);
                         hitboxFreezeUsed.put(hb, true);
                     }
 
+
                     if (!shakeUsed) {
-                        if (shake != null) shake.addShake(HIT_SHAKE_INTENSITY, HIT_SHAKE_DURATION);
+                        if (shake != null) {
+                            float s = hb.strength;
+                            float inten = HIT_SHAKE_INTENSITY * s;
+                            float dur = clampf(HIT_SHAKE_DURATION + 0.02f * (s - 1f), 0.06f, 0.18f);
+                            shake.addShake(inten, dur);
+                        }
                         hitboxShakeUsed.put(hb, true);
                     }
                 }
@@ -816,181 +855,49 @@ public class GameWorld {
         }
     }
 
-    private Dir findInteractableDoorDir() {
-        int ts = room.getTileSize();
-        int roomW = room.getRoomWidth();
-        int roomH = room.getRoomHeight();
-
-        // Player rect (world coords)
-        float px = player.getX();
-        float py = player.getY();
-        float pw = player.getWidth();
-        float ph = player.getHeight();
-
-        // Player center -> tile (world tile coords)
-        float pcx = px + pw * 0.5f;
-        float pcy = py + ph * 0.5f;
-
-        int pTileX = (int)Math.floor(pcx / ts);
-        int pTileY = (int)Math.floor(pcy / ts);
-
-        Dir bestDir = null;
-        float bestDist2 = Float.MAX_VALUE;
-
-        // Scan a small neighborhood around the player for door tiles
-        for (int dy = -DOOR_SCAN_RADIUS; dy <= DOOR_SCAN_RADIUS; dy++) {
-            for (int dx = -DOOR_SCAN_RADIUS; dx <= DOOR_SCAN_RADIUS; dx++) {
-                int tx = pTileX + dx;
-                int tyWorld = pTileY + dy;
-
-                if (tx < 0 || tx >= roomW || tyWorld < 0 || tyWorld >= roomH) continue;
-
-                if (!isDoorWorld(tx, tyWorld, roomH)) continue;
-
-                // Door tile rect expanded a bit (world coords)
-                float doorX = tx * ts;
-                float doorY = tyWorld * ts;
-
-                float rx = doorX - DOOR_INTERACT_PAD;
-                float ry = doorY - DOOR_INTERACT_PAD;
-                float rw = ts + DOOR_INTERACT_PAD * 2f;
-                float rh = ts + DOOR_INTERACT_PAD * 2f;
-
-                if (!overlaps(px, py, pw, ph, rx, ry, rw, rh)) continue;
-
-                Dir dir = dirFromDoorTile(tx, tyWorld, roomW, roomH);
-                if (dir == null) continue;
-
-                // pick closest door tile to player center
-                float cx = doorX + ts * 0.5f;
-                float cy = doorY + ts * 0.5f;
-                float ddx = cx - pcx;
-                float ddy = cy - pcy;
-                float d2 = ddx * ddx + ddy * ddy;
-
-                if (d2 < bestDist2) {
-                    bestDist2 = d2;
-                    bestDir = dir;
-                }
-            }
-        }
-
-        return bestDir;
+    // -------------------- Upgrades / applying --------------------
+    private void clearOfferedUpgrades() {
+        offeredUpgrades[0] = null;
+        offeredUpgrades[1] = null;
+        offeredUpgrades[2] = null;
     }
 
-    private boolean isDoorWorld(int tx, int tyWorld, int roomH) {
-        int tyData = (roomH - 1) - tyWorld;
-        try {
-            return room.isDoor(tx, tyData);
-        } catch (Throwable t) {
-            return false;
+    private Upgrade randomUpgrade() {
+        int r = rng.nextInt(4);
+        if (r == 0) return new Upgrade("Rapid Fire", "Fire rate +20%", fireRateUpgrade);
+        if (r == 1) return new Upgrade("Runner", "Move speed +15%", movementUpgrade);
+        if (r == 2) return new Upgrade("Vitality", "Max HP +1 and heal 1", healthUpgrade);
+        return new Upgrade("Extra Damage", "Damage +1", damageUpgrade);
+    }
+
+    private void applyUpgrade(Upgrade u) {
+        if (u == null || player == null) return;
+
+        if (u.name.equals("Rapid Fire")) {
+            if (weapon != null) weapon.setAttackCooldownTime(Math.max(0.05f, weapon.getAttackCooldownTime() * 0.8f));
+        } else if (u.name.equals("Runner")) {
+            player.setSpeed(player.getSpeed() * 1.15f);
+        } else if (u.name.equals("Vitality")) {
+            player.increaseMaxHealth(1);
+            player.heal(1);
+        } else if (u.name.equals("Extra Damage")) {
+            if (weapon != null) weapon.setDamage(weapon.getDamage() + 1);
         }
     }
 
-    private Dir dirFromDoorTile(int tx, int tyWorld, int roomW, int roomH) {
-        if (tyWorld >= roomH - DOOR_EDGE_BAND) return Dir.UP;
-        if (tyWorld < DOOR_EDGE_BAND) return Dir.DOWN;
-        if (tx < DOOR_EDGE_BAND) return Dir.LEFT;
-        if (tx >= roomW - DOOR_EDGE_BAND) return Dir.RIGHT;
-        return null; // door tile not near an edge (unexpected)
+    private void closeShopMenu() {
+        shrineOpen = false;
+        choosingUpgrade = false;
+        clearOfferedUpgrades();
     }
 
-    public void onEnterRoom(boolean shouldStartWave) {
-        // clear transient stuff
-        enemies.clear();
-        meleeHitboxes.clear();
-        damagePopups.clear();
-        drops.clear();          // new
-        shrine = null;          // new
-        shrineOpen = false;     // new
-
-        waveActive = false;
-
-        if (shouldStartWave) {
-            startWave();
-        }
+    private static float stunFromStrength(float strength) {
+        float base = 0.08f;                    // light hitstun
+        float extra = 0.05f * (strength - 1f); // heavier hits stun more
+        return clampf(base + extra, 0.05f, 0.18f);
     }
 
-    private void updateDropPickups() {
-        if (player == null) return;
-
-        float px = player.getX(), py = player.getY();
-        float pw = player.getWidth(), ph = player.getHeight();
-
-        for (int i = drops.size() - 1; i >= 0; i--) {
-            Drop d = drops.get(i);
-            if (d == null) continue;
-
-            if (overlaps(px, py, pw, ph, d.x, d.y, d.w, d.h)) {
-                souls += d.value;          // or coins
-                drops.remove(i);
-                //if (audio != null) audio.playPickup(); // optional
-            }
-        }
-    }
-
-    private void maybeSpawnShrine() {
-        if (rng.nextFloat() > 0.9f) return; // 25% chance
-
-        // find open spot (you already have open-spot helpers)
-        float[] p = findFirstOpenSpotRect(32f, 32f, 0f);
-        if (p == null) return;
-
-        Upgrade[] stock = new Upgrade[] { randomUpgrade(), randomUpgrade(), randomUpgrade() };
-        shrine = new Shrine(p[0], p[1], stock);
-    }
-
-    private boolean playerNearShrine() {
-        if (player == null || shrine == null) return false;
-        float px = player.getX(), py = player.getY();
-        float pw = player.getWidth(), ph = player.getHeight();
-        // small interaction padding
-        return overlaps(px, py, pw, ph, shrine.x - 8f, shrine.y - 8f, shrine.w + 16f, shrine.h + 16f);
-    }
-
-    public void buyShrineUpgrade(int index) {
-        if (!shrineOpen || shrine == null) return;
-        if (index < 0 || index >= shrine.stock.length) return;
-
-        Upgrade u = shrine.stock[index];
-        if (u == null) return;
-
-        int cost = costFor(u);
-        if (souls < cost) return;
-
-        souls -= cost;
-        applyUpgrade(u);
-        shrine.stock[index] = null; // remove purchased
-    }
-
-    private int costFor(Upgrade u) { return 3; } // e.g., 3 souls each
-
-    public void setShrine(Shrine shrine) { this.shrine = shrine; }
-
-    public boolean isPlayerNearShrine() {
-        if (player == null || shrine == null) return false;
-
-        float px = player.getX() + player.getWidth() * 0.5f;
-        float py = player.getY() + player.getHeight() * 0.5f;
-
-        float sx = shrine.x + shrine.w * 0.5f;
-        float sy = shrine.y + shrine.h * 0.5f;
-
-        float dx = sx - px;
-        float dy = sy - py;
-        return (dx * dx + dy * dy) <= (SHRINE_INTERACT_RADIUS * SHRINE_INTERACT_RADIUS);
-    }
-
-    private boolean tryUseShrine() {
-        if (player == null || shrine == null) return false;
-        if (!Gdx.input.isKeyJustPressed(Input.Keys.E)) return false;
-        if (!isPlayerNearShrine()) return false;
-
-        // Open your existing upgrade menu (now it's "shrine shop")
-        beginUpgradeChoice();
-        return true; // IMPORTANT: so E doesn’t also trigger door usage this frame
-    }
-
+    // -------------------- Dispose --------------------
     public void dispose() {
         cardTexture.dispose();
 

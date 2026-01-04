@@ -4,7 +4,7 @@ import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 
 public abstract class Entity {
-    private float x, y;
+    protected float x, y;
     private float speed;
 
     private float width, height;

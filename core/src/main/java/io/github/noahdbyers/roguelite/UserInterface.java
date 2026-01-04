@@ -119,6 +119,11 @@ public class UserInterface {
     private final Matrix4 identityTransform = new Matrix4();
     private final Matrix4 savedWorldProjection = new Matrix4();
 
+    // in PlayerCombat fields
+    private float lockedAimX, lockedAimY;
+    private float lockedDirX = 1f, lockedDirY = 0f;
+
+
     public UserInterface(float width, float height,
                          GameWorld world,
                          ShapeRenderer shapeRenderer,
@@ -215,7 +220,7 @@ public class UserInterface {
         Player p = world.getPlayer();
         if (w != null && p != null) {
             tmpMouseWorld.set(world.getAimWorldX(), world.getAimWorldY());
-            w.draw(spriteBatch, delta, p, tmpMouseWorld);
+            w.draw(spriteBatch, delta, p);
         }
 
         spriteBatch.end();
