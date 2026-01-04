@@ -701,9 +701,7 @@ public class GameWorld {
                 enemy.getX(), enemy.getY(), enemy.getWidth(), enemy.getHeight()
             );
 
-            if (hit && !player.isInvulnerable()) {
-                player.takeDamage(1);
-            }
+
         }
     }
 
@@ -811,14 +809,14 @@ public class GameWorld {
                 )) {
                     enemy.takeDamage(hb.damage);
                     alreadyHit.add(enemy);
-                    float stun = stunFromStrength(hb.strength);
-                    enemy.applyHitstun(stun);
 
                     float popX = enemy.getX() + enemy.getWidth() * 0.5f;
                     float popY = enemy.getY() + enemy.getHeight() + 10f;
                     damagePopups.add(new DamagePopup(popX, popY, hb.damage));
 
                     enemy.takeKnockback(hb.dir.x, hb.dir.y, 400f);
+                    float stun = stunFromStrength(hb.strength);
+                    enemy.applyHitstun(stun);
 
                     if (enemy.isDead()) {
                         float dx = enemy.getX() + enemy.getWidth() * 0.5f;
