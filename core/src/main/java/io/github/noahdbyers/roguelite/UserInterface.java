@@ -30,6 +30,9 @@ public class UserInterface {
     private final float width;
     private final float height;
 
+    // When running 16:9, we keep the original 640-wide HUD layout and center it.
+    private final float uiOffsetX;
+
     private final GameWorld world;
     private final ShapeRenderer shapeRenderer; // kept for compatibility (you removed bullets)
     private final SpriteBatch spriteBatch;
@@ -67,11 +70,17 @@ public class UserInterface {
     private final Texture iconKill = Utility.loadNearest("ui/SkullIcon.png");
     private final Texture iconWave = Utility.loadNearest("ui/ClearIcon.png");
 
+    // HUD colors (avoid per-frame allocations)
+    private static final Color HUD_HP_COLOR = new Color(0.75f, 0.15f, 0.15f, 1f);
+    private static final Color HUD_MANA_COLOR = new Color(0.20f, 0.45f, 0.90f, 1f);
+
     // ----------------------------
     // NEW: Drop + Shrine visuals (WORLD SPACE)
     // ----------------------------
     // If you have a dedicated drop sprite, swap this path.
     private final TextureRegion dropTextureRegion = new TextureRegion(iconSoul);
+    private final Texture itemSheet = new Texture("items/itemSprites.png");
+    private ArrayList<TextureRegion> itemSprites = new ArrayList<>();
 
     // If you already have a shrine texture/region somewhere else, swap this.
     private final Texture shrineSheet = new Texture("ui/shrineSheet.png");
@@ -132,6 +141,9 @@ public class UserInterface {
                          Viewport viewport) {
         this.width = width;
         this.height = height;
+
+        // Center HUD elements that were authored for a 640-wide layout.
+        this.uiOffsetX = Math.max(0f, (width - 640f) * 0.5f);
         this.world = world;
         this.shapeRenderer = shapeRenderer;
         this.entities = entities;
@@ -150,6 +162,12 @@ public class UserInterface {
         // Screen-space: (0..width, 0..height) where width/height are VIRTUAL size
         screenProjection.setToOrtho2D(0f, 0f, width, height);
         identityTransform.idt();
+
+        for (int y = 0; y < 4; y++) {
+            for (int x = 0; x < 5; x++) {
+                itemSprites.add(new TextureRegion(itemSheet, x * 32, y * 32, 32, 32));
+            }
+        }
     }
 
     /** Provide the UI viewport from Main (the one updated in resize). */
@@ -688,24 +706,199 @@ private void drawChestPrompt() {
         Player p = world.getPlayer();
         if (p == null) return;
 
-        float startX = 140;
-        float startY = height - 448;
-        float rowGap = 20;
+        // -----------------------------------------------------------------
+        // Reworked HUD layout (matches the user's sketch)
+        //  - Top-left: HP and Mana bars
+        //  - Top-right: Kills / Souls / Coins box
+        //  - Bottom-center: Item sprite bar
+        // -----------------------------------------------------------------
 
         float manaPct = (p.getMaxMana() <= 0) ? 0f : (p.getMana() / (float) p.getMaxMana());
         float hpPct = (p.getMaxHealth() <= 0) ? 0f : (p.getHealth() / (float) p.getMaxHealth());
 
-        drawManaBar(iconMana, uiBarManaBg, uiBarManaFill, startX + 45, startY + rowGap, manaPct);
-        drawHealthBar(iconHeart, uiBarBg, uiBarHealthFill, startX, startY, hpPct);
-
-        drawSmallStat(iconCoin, startX + 405, 485, "     " + world.getCoins());
-        drawSmallStat(iconSoul, startX + 425, 440, "" + world.getSouls());
-
-        drawSmallStat(iconKill, startX - 148, 490, "  " + world.getEnemiesKilled());
-        drawSmallStat(iconWave, startX - 140, 450, "" + world.getWave());
+        drawTopLeftBars(hpPct, manaPct);
+        drawTopRightStats();
+        drawBottomItemBar();
 
         drawItemToast();
-        drawItemList();
+    }
+
+    // -----------------------------------------------------------------
+    // NEW HUD LAYOUT HELPERS
+    // -----------------------------------------------------------------
+
+    private void drawTopLeftBars(float hpPct, float manaPct) {
+        final float pad = 14f;
+        final float barW = 220f;
+        final float hpH = 16f;
+        final float manaH = 12f;
+        final float gap = 6f;
+
+        float x = pad;
+        float top = height - pad;
+
+        // Health on top, mana below (as sketched).
+        float hpY = top - hpH;
+        float manaY = hpY - gap - manaH;
+
+        // Use a clean, seam-free rectangle bar style.
+        drawSimpleBar(x, hpY, barW, hpH, hpPct, HUD_HP_COLOR);
+        drawSimpleBar(x, manaY, barW, manaH, manaPct, HUD_MANA_COLOR);
+
+        // Small icons to the left of each bar.
+        float iconSize = 14f;
+        spriteBatch.draw(iconHeart, Math.round(x - iconSize - 6f), Math.round(hpY + (hpH - iconSize) * 0.5f), iconSize, iconSize);
+        spriteBatch.draw(iconMana,  Math.round(x - iconSize - 6f), Math.round(manaY + (manaH - iconSize) * 0.5f), iconSize, iconSize);
+    }
+
+    private void drawTopRightStats() {
+        final float pad = 14f;
+        final float boxW = 210f;
+        final float boxH = 54f;
+
+        float x = Math.round(width - pad - boxW);
+        float y = Math.round(height - pad - boxH);
+
+        drawPanel(x, y, boxW, boxH, 0.55f);
+
+        int kills = world.getEnemiesKilled();
+        int souls = world.getSouls();
+        int coins = world.getCoins();
+
+        // 3 columns: Kills / Souls / Coins
+        float colW = boxW / 3f;
+        float iconSize = 16f;
+
+        font.setColor(Color.WHITE);
+
+        // Labels are small; numbers are larger.
+        float oldScaleX = font.getData().scaleX;
+        float oldScaleY = font.getData().scaleY;
+
+        for (int i = 0; i < 3; i++) {
+            float cx = x + colW * i + colW * 0.5f;
+
+            Texture icon;
+            String label;
+            String value;
+            if (i == 0) {
+                icon = iconKill;
+                label = "kills";
+                value = String.valueOf(kills);
+            } else if (i == 1) {
+                icon = iconSoul;
+                label = "souls";
+                value = String.valueOf(souls);
+            } else {
+                icon = iconCoin;
+                label = "coins";
+                value = String.valueOf(coins);
+            }
+
+            // Icon
+            spriteBatch.draw(icon, Math.round(cx - iconSize * 0.5f), Math.round(y + boxH - iconSize - 6f), iconSize, iconSize);
+
+            // Label
+            font.getData().setScale(0.55f);
+            drawCenteredText(label, cx, y + boxH - 12f);
+
+            // Value
+            font.getData().setScale(0.9f);
+            drawCenteredText(value, cx, y + 18f);
+        }
+
+        font.getData().setScale(oldScaleX, oldScaleY);
+        font.setColor(Color.WHITE);
+    }
+
+    private void drawBottomItemBar() {
+        ItemSystem items = world.getItems();
+        if (items == null) return;
+
+        final float padBottom = 12f;
+        final float barH = 52f;
+
+        // Wide, centered bar as in the sketch.
+        float barW = Math.min(width - 60f, 520f);
+        float x = Math.round((width - barW) * 0.5f);
+        float y = Math.round(padBottom);
+
+        drawPanel(x, y, barW, barH, 0.0f);
+
+        float innerPad = 10f;
+        float iconSize = 32f;
+        float gap = 6f;
+        float drawX = x + innerPad;
+        float drawY = y + (barH - iconSize) * 0.5f;
+
+        int maxIcons = (int) Math.floor((barW - innerPad * 2f + gap) / (iconSize + gap));
+        int shown = 0;
+
+        for (ItemId id : items.getOwnedList()) {
+            if (id == null) continue;
+            if (shown >= maxIcons) break;
+
+            ItemDefinition def = ItemRegistry.get(id);
+            TextureRegion icon = null;
+            if (def != null && def.iconTileIndex >= 0 && def.iconTileIndex < itemSprites.size()) {
+                icon = itemSprites.get(def.iconTileIndex);
+            }
+
+            if (icon != null) {
+                spriteBatch.draw(icon, Math.round(drawX), Math.round(drawY), iconSize, iconSize);
+            } else {
+                // Fallback: draw a small placeholder box if the icon is missing.
+                drawPanel(Math.round(drawX), Math.round(drawY), iconSize, iconSize, 0.35f);
+            }
+
+            drawX += iconSize + gap;
+            shown++;
+        }
+    }
+
+    private void drawPanel(float x, float y, float w, float h, float alpha) {
+        Color c = spriteBatch.getColor();
+        float r = c.r, g = c.g, b = c.b, a = c.a;
+
+        // Background
+        spriteBatch.setColor(0f, 0f, 0f, alpha);
+        spriteBatch.draw(whitePixel, x, y, w, h);
+
+        // Subtle border
+        spriteBatch.setColor(1f, 1f, 1f, 0.0f);
+        spriteBatch.draw(whitePixel, x, y, w, 2f);
+        spriteBatch.draw(whitePixel, x, y + h - 2f, w, 2f);
+        spriteBatch.draw(whitePixel, x, y, 2f, h);
+        spriteBatch.draw(whitePixel, x + w - 2f, y, 2f, h);
+
+        spriteBatch.setColor(r, g, b, a);
+    }
+
+    private void drawSimpleBar(float x, float y, float w, float h, float pct, Color fillColor) {
+        pct = Math.max(0f, Math.min(1f, pct));
+
+        Color c = spriteBatch.getColor();
+        float r = c.r, g = c.g, b = c.b, a = c.a;
+
+        // Back
+        spriteBatch.setColor(0f, 0f, 0f, 0.55f);
+        spriteBatch.draw(whitePixel, Math.round(x), Math.round(y), Math.round(w), Math.round(h));
+
+        // Fill
+        float filled = Math.round(w * pct);
+        if (filled > 0) {
+            spriteBatch.setColor(fillColor);
+            spriteBatch.draw(whitePixel, Math.round(x), Math.round(y), filled, Math.round(h));
+        }
+
+        // Border
+        spriteBatch.setColor(1f, 1f, 1f, 0.20f);
+        spriteBatch.draw(whitePixel, Math.round(x), Math.round(y), Math.round(w), 2f);
+        spriteBatch.draw(whitePixel, Math.round(x), Math.round(y + h - 2f), Math.round(w), 2f);
+        spriteBatch.draw(whitePixel, Math.round(x), Math.round(y), 2f, Math.round(h));
+        spriteBatch.draw(whitePixel, Math.round(x + w - 2f), Math.round(y), 2f, Math.round(h));
+
+        spriteBatch.setColor(r, g, b, a);
     }
 
     private void drawItemToast() {
@@ -718,38 +911,6 @@ private void drawChestPrompt() {
         drawCenteredText(toast, width / 2f, height - 26f);
         font.getData().setScale(1.0f);
     }
-
-    private void drawItemList() {
-        ItemSystem items;
-        try { items = world.getItems(); } catch (Throwable t) { return; }
-        if (items == null || items.getOwnedList() == null || items.getOwnedList().isEmpty()) return;
-
-        float x = 16f;
-        float y = height - 80f;
-
-        font.setColor(Color.WHITE);
-        font.getData().setScale(0.75f);
-
-        font.draw(spriteBatch, "Items:", x, y);
-        y -= 16f;
-
-        int shown = 0;
-        for (ItemId id : items.getOwnedList()) {
-            if (id == null) continue;
-            ItemDefinition def = ItemRegistry.get(id);
-            String name = (def != null) ? def.name : id.name();
-            font.draw(spriteBatch, "• " + name, x, y);
-            y -= 14f;
-            shown++;
-            if (shown >= 7) {
-                font.draw(spriteBatch, "...", x, y);
-                break;
-            }
-        }
-
-        font.getData().setScale(1.0f);
-    }
-
     private void updateSelectionHighlight() {
         // Don’t allow number-key selection during the delay
         if (upgradeInputTimer > 0f) {

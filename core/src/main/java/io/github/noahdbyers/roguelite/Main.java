@@ -28,8 +28,23 @@ public class Main extends ApplicationAdapter {
     private OrthographicCamera uiCamera;
     private Viewport uiViewport;
 
-    private static final float VIRTUAL_WIDTH = 640;
-    private static final float VIRTUAL_HEIGHT = 480;
+    /**
+     * Baseline layout size that the game/UI was authored against.
+     *
+     * We keep the authored height (480) so the classic 20x15 tile room (32px tiles) still fits
+     * vertically without forcing a re-authoring of room templates.
+     *
+     * To render the game in a true 16:9 aspect ratio, we expand the virtual width to 16:9 while
+     * preserving pixel-art friendliness via FitViewport letterboxing.
+     */
+    private static final float DESIGN_WIDTH = 640f;
+    private static final float DESIGN_HEIGHT = 480f;
+
+    private static final float VIRTUAL_HEIGHT = DESIGN_HEIGHT;
+    private static final float VIRTUAL_WIDTH = DESIGN_HEIGHT * (16f / 9f);
+
+    /** Extra horizontal space introduced by moving from 4:3 (640x480) -> 16:9 (~853.33x480). */
+    private static final float SIDE_PAD_X = (VIRTUAL_WIDTH - DESIGN_WIDTH) * 0.5f;
 
     // -------------------- Rendering --------------------
     private ShapeRenderer shapeRenderer;
@@ -175,9 +190,12 @@ public class Main extends ApplicationAdapter {
         flagBannerRegion = new TextureRegion(generalAssets, 20, 292, 111, 32);
 
         // Build dungeon tiles (10x10, 16px)
+        // Use a half-texel inset when creating regions from a spritesheet.
+        // This prevents thin “seams”/gaps that can show up at certain fullscreen resolutions
+        // when the viewport scale is not a perfect integer.
         for (int y = 0; y < 10; y++) {
             for (int x = 0; x < 10; x++) {
-                dungeonTiles.add(new TextureRegion(dungeonTileSheet, x * 16, y * 16, 16, 16));
+                dungeonTiles.add(Utility.regionNoBleed(dungeonTileSheet, x * 16, y * 16, 16, 16));
             }
         }
 
@@ -206,9 +224,9 @@ public class Main extends ApplicationAdapter {
         );
 
         // Title screen buttons
-        marketButton = new Button(205, 20, 80, 80, null, marketButtonTextures);
-        settingsCogButton = new Button(45, 20, 80, 80, null, settingsCogTextures);
-        playButton = new Button(45, 360, 240, 80, "PLAY", basicButtonTextures);
+        marketButton = new Button((int)(205f + SIDE_PAD_X), 20, 80, 80, null, marketButtonTextures);
+        settingsCogButton = new Button((int)(45f + SIDE_PAD_X), 20, 80, 80, null, settingsCogTextures);
+        playButton = new Button((int)(45f + SIDE_PAD_X), 360, 240, 80, "PLAY", basicButtonTextures);
         Collections.addAll(titleScreenButtons, marketButton, settingsCogButton, playButton);
 
         // Weapon object
@@ -318,11 +336,11 @@ public class Main extends ApplicationAdapter {
 
             spriteBatch.begin();
 
-            spriteBatch.draw(titleScreenBackgroundTex, 0, 0, VIRTUAL_WIDTH, VIRTUAL_HEIGHT);
-            spriteBatch.draw(uiBannerRegion, 320, 20, 256, 420);
-            spriteBatch.draw(uiBannerRegion, 45, 105, 240, 230);
-            spriteBatch.draw(flagBannerRegion, 65, 300, 200, 60);
-            spriteBatch.draw(flagBannerRegion, 340, 400, 220, 60);
+            drawTextureCover(spriteBatch, titleScreenBackgroundTex, 0f, 0f, VIRTUAL_WIDTH, VIRTUAL_HEIGHT);
+            spriteBatch.draw(uiBannerRegion, 320f + SIDE_PAD_X, 20f, 256f, 420f);
+            spriteBatch.draw(uiBannerRegion, 45f + SIDE_PAD_X, 105f, 240f, 230f);
+            spriteBatch.draw(flagBannerRegion, 65f + SIDE_PAD_X, 300f, 200f, 60f);
+            spriteBatch.draw(flagBannerRegion, 340f + SIDE_PAD_X, 400f, 220f, 60f);
 
             for (Button b : titleScreenButtons) {
                 if (b.isHovered(viewport)) b.setCurrTextureIndex(1);
@@ -340,8 +358,8 @@ public class Main extends ApplicationAdapter {
                 audio.startGameMusic();
             }
 
-            font.draw(spriteBatch, "STATS", 115, 338, 100, Align.center, true);
-            font.draw(spriteBatch, "CLASS", 395, 438, 100, Align.center, true);
+            font.draw(spriteBatch, "STATS", 115f + SIDE_PAD_X, 338f, 100f, Align.center, true);
+            font.draw(spriteBatch, "CLASS", 395f + SIDE_PAD_X, 438f, 100f, Align.center, true);
 
             spriteBatch.end();
             return;
@@ -365,8 +383,13 @@ public class Main extends ApplicationAdapter {
                 float halfW = (VIRTUAL_WIDTH * camZoom) * 0.5f;
                 float halfH = (VIRTUAL_HEIGHT * camZoom) * 0.5f;
 
-                float targetX = clampf(px, halfW, Math.max(halfW, roomW - halfW));
-                float targetY = clampf(py, halfH, Math.max(halfH, roomH - halfH));
+                float targetX = (halfW >= roomW * 0.5f)
+                        ? roomW * 0.5f
+                        : clampf(px, halfW, Math.max(halfW, roomW - halfW));
+
+                float targetY = (halfH >= roomH * 0.5f)
+                        ? roomH * 0.5f
+                        : clampf(py, halfH, Math.max(halfH, roomH - halfH));
 
                 // Smooth follow
                 float a = 1f - (float) Math.exp(-followLerp * delta);
@@ -397,6 +420,26 @@ public class Main extends ApplicationAdapter {
         }
     }
 
+    /**
+     * Draws a texture so it *covers* the target rectangle while preserving the texture's aspect
+     * ratio (no stretching). Any excess is cropped.
+     */
+    private static void drawTextureCover(SpriteBatch batch, Texture tex, float x, float y, float targetW, float targetH) {
+        if (batch == null || tex == null) return;
+        float tw = tex.getWidth();
+        float th = tex.getHeight();
+        if (tw <= 0f || th <= 0f) return;
+
+        float scale = Math.max(targetW / tw, targetH / th);
+        float dw = tw * scale;
+        float dh = th * scale;
+
+        float dx = x + (targetW - dw) * 0.5f;
+        float dy = y + (targetH - dh) * 0.5f;
+
+        batch.draw(tex, dx, dy, dw, dh);
+    }
+
     private void updateCameraWithShake(float delta) {
         float sx = 0f;
         float sy = 0f;
@@ -412,9 +455,30 @@ public class Main extends ApplicationAdapter {
             sy = (shakeRng.nextFloat() * 2f - 1f) * strength;
         }
 
-        // Snap to whole pixels for cleaner pixel-art rendering
-        float camX = Math.round(baseCamX + sx);
-        float camY = Math.round(baseCamY + sy);
+        // Snap camera to the underlying *screen pixel* grid (prevents tile seams/gaps).
+        //
+        // IMPORTANT: In fullscreen, FitViewport often has to round the internal viewport pixel size to ints,
+        // which can make the world-to-screen mapping slightly "off" even if the camera position itself is
+        // rounded. The most robust fix is to snap the *viewport's left/bottom edges* (in world units) to the
+        // pixel grid, then reconstruct the camera center.
+        float wuppX = (viewport.getScreenWidth() == 0) ? 1f : (viewport.getWorldWidth() / (float) viewport.getScreenWidth());
+        float wuppY = (viewport.getScreenHeight() == 0) ? 1f : (viewport.getWorldHeight() / (float) viewport.getScreenHeight());
+
+        float desiredCamX = baseCamX + sx;
+        float desiredCamY = baseCamY + sy;
+
+        float halfW = viewport.getWorldWidth() * 0.5f;
+        float halfH = viewport.getWorldHeight() * 0.5f;
+
+        float left = desiredCamX - halfW;
+        float bottom = desiredCamY - halfH;
+
+        // Snap edges to pixel grid.
+        left = Math.round(left / wuppX) * wuppX;
+        bottom = Math.round(bottom / wuppY) * wuppY;
+
+        float camX = left + halfW;
+        float camY = bottom + halfH;
 
         camera.position.set(camX, camY, 0f);
         camera.update();

@@ -107,6 +107,9 @@ public class ItemSystem {
             }
         }
 
+        if(has(ItemId.TRUE_GODS_BLESSING)) {
+
+        }
         // Scroll stacking buff
         if (has(ItemId.SCROLL_OF_THE_FALLEN_HEROES)) {
             scrollStacks = Math.min(scrollStacks + 1, 25);
@@ -250,6 +253,11 @@ public class ItemSystem {
         if (has(ItemId.SUN_GODS_BLESSING)) {
             int bonus = Math.max(1, Math.round(baseWeaponDamage * 0.35f));
             enemy.takeDamage(bonus, DamageType.FIRE);
+        }
+
+        if(has(ItemId.TRUE_GODS_BLESSING)) {
+            int bonus = 1000;
+            enemy.takeDamage(bonus, DamageType.HOLY);
         }
     }
 
