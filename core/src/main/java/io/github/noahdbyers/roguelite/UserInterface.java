@@ -462,9 +462,12 @@ public class UserInterface {
                 boolean afford = world.canAffordUpgrade(i);
                 if (!afford) {
                     Color c = spriteBatch.getColor();
+                    float r = c.r, g = c.g, b = c.b, a = c.a;
+
                     spriteBatch.setColor(0f, 0f, 0f, 0.55f);
                     spriteBatch.draw(whitePixel, dx, dy, drawSize, drawSize);
-                    spriteBatch.setColor(c);
+
+                    spriteBatch.setColor(r, g, b, a);
                 }
 
                 font.getData().setScale(0.85f);
