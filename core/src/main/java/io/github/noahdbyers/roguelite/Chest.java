@@ -13,9 +13,19 @@ public class Chest {
     /** Souls granted when opened (deterministic per chest). */
     public int soulReward = 0;
 
+    /** Optional item reward. If non-null, opening the chest grants the item. */
+    public ItemId itemReward = null;
+
     public Chest(float x, float y, int soulReward) {
         this.x = x;
         this.y = y;
         this.soulReward = soulReward;
+    }
+
+    public Chest(float x, float y, int soulReward, ItemId itemReward) {
+        this.x = x;
+        this.y = y;
+        this.soulReward = soulReward;
+        this.itemReward = itemReward;
     }
 }
