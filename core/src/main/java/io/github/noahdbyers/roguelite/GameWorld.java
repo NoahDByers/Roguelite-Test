@@ -22,6 +22,63 @@ public class GameWorld {
     private static final float SHRINE_INTERACT_RADIUS = 60f;
     private static final int SHRINE_BASE_UPGRADE_COST = 3;
 
+
+    // -------------------- Chests --------------------
+    private static final float CHEST_INTERACT_RADIUS = 60f;
+
+        /** Convenience: current room's chest list (may be empty). */
+        public ArrayList<Chest> getChests() {
+            if (room == null) return null;
+            return room.getChests();
+        }
+
+        /** Nearest unopened chest within interact radius (for UI prompts). */
+        public Chest getNearestInteractableChest() {
+            if (player == null || room == null) return null;
+            ArrayList<Chest> cs = room.getChests();
+            if (cs == null || cs.isEmpty()) return null;
+
+            float px = player.getX() + player.getWidth() * 0.5f;
+            float py = player.getY() + player.getHeight() * 0.5f;
+
+            Chest best = null;
+            float bestD2 = CHEST_INTERACT_RADIUS * CHEST_INTERACT_RADIUS;
+
+            for (Chest c : cs) {
+                if (c == null || c.opened) continue;
+                float cx = c.x + c.w * 0.5f;
+                float cy = c.y + c.h * 0.5f;
+                float dx = cx - px;
+                float dy = cy - py;
+                float d2 = dx * dx + dy * dy;
+                if (d2 <= bestD2) {
+                    bestD2 = d2;
+                    best = c;
+                }
+            }
+            return best;
+        }
+
+        private boolean tryOpenChest() {
+            if (player == null || room == null) return false;
+            if (!Gdx.input.isKeyJustPressed(Input.Keys.E)) return false;
+
+            Chest c = getNearestInteractableChest();
+            if (c == null) return false;
+
+            c.opened = true;
+
+            // Reward: souls (chest stores its own reward for determinism)
+            if (c.soulReward > 0) souls += c.soulReward;
+
+            if (audio != null) audio.playUIClick();
+
+            // small cooldown so you can't double-trigger instantly
+            shrineInteractCooldown = 0.15f;
+            return true;
+        }
+
+
     public Shrine getShrine() { return shrine; }
     public boolean isShrineOpen() { return shrineOpen; }
     public void closeShrine() {
@@ -243,8 +300,17 @@ public class GameWorld {
         doorCooldown = Math.max(0f, doorCooldown - delta);
         shrineInteractCooldown = Math.max(0f, shrineInteractCooldown - delta);
 
-        // Freeze stop (hitstop)
+        // Freeze stop (hitstop). We still allow buffering dash/attack during hitstop.
         if (freezeTimer > 0f) {
+            // Allow snappy inputs even during hitstop; actual movement/attack advances once freeze ends.
+            if (player != null && !choosingUpgrade) {
+                handleDashInput();
+                if (Gdx.input.isButtonJustPressed(Input.Buttons.LEFT)) {
+                    combat.bufferAttack();
+                    facePlayerToward(getAimDirection());
+                }
+            }
+
             freezeTimer -= delta;
             if (freezeTimer < 0f) freezeTimer = 0f;
             return;
@@ -273,6 +339,11 @@ public class GameWorld {
         if (tryUseShrine()) {
             // opened shop this frame
             if (player != null) player.setAnimationPaused(true);
+            return;
+        }
+
+        // Chest interaction (E)
+        if (tryOpenChest()) {
             return;
         }
 

@@ -17,6 +17,8 @@ cemetery/cemeteryFloor.png
 cemetery/cemeteryTiles.png
 com/badlogic/gdx/utils/lsans-15.fnt
 com/badlogic/gdx/utils/lsans-15.png
+items/itemSprites.png
+items/rune.png
 player/Idle.png
 player/Run.png
 rooms/room1.tmj
