@@ -62,6 +62,12 @@ public class Main extends ApplicationAdapter {
     // NEW: WFC world (grid of rooms)
     private static final int WORLD_W = 10;
     private static final int WORLD_H = 10;
+
+    // Chests (dungeonTileSheet sprite index 93)
+    private static final int CHEST_TILE_INDEX = 94;
+    private static final float CHEST_CHANCE_BASE = 0.98f;
+    private static final float CHEST_CHANCE_PER_DIST = 0.03f;   // farther from start => more chests
+    private static final float CHEST_SECOND_CHANCE = 0.06f;
     private Room[][] worldRooms;          // [y][x]
     private int[][] chosenTemplates;      // [y][x]
     private int worldCellX = 5;
@@ -235,6 +241,8 @@ public class Main extends ApplicationAdapter {
             for (int x = 0; x < WORLD_W; x++) {
                 int tid = chosenTemplates[y][x];
                 worldRooms[y][x] = lib.pickRoomForTemplate(tid, rng);
+                generateChestsForRoom(worldRooms[y][x], rng, x, y);
+
             }
         }
 
@@ -415,7 +423,70 @@ public class Main extends ApplicationAdapter {
         return Math.max(lo, Math.min(hi, v));
     }
 
-    private void handleDoorUsed(Dir dir) {
+
+    private void generateChestsForRoom(Room r, Random rng, int cellX, int cellY) {
+        if (r == null) return;
+
+        // Ensure unique chest state per room instance
+        r.clearChests();
+
+        // Seed local RNG for determinism within this run regardless of generation order
+        long seed = rng.nextLong() ^ (cellX * 73856093L) ^ (cellY * 19349663L);
+        Random local = new Random(seed);
+
+        // Chance scales slightly with distance from the start cell
+        int startX = WORLD_W / 2;
+        int startY = WORLD_H / 2;
+        int dist = Math.abs(cellX - startX) + Math.abs(cellY - startY);
+
+        float p = CHEST_CHANCE_BASE + dist * CHEST_CHANCE_PER_DIST;
+        if (p > 0.55f) p = 0.55f;
+
+        int count = 0;
+        if (local.nextFloat() < p) count++;
+        if (local.nextFloat() < CHEST_SECOND_CHANCE) count++;
+
+        if (count <= 0) return;
+
+        int[][] col = r.getCollisions();
+        if (col == null) return;
+
+        int roomW = r.getRoomWidth();
+        int roomH = r.getRoomHeight();
+        int ts = r.getTileSize();
+
+        // Candidate tiles (avoid edges/doors; collisions are stored TOP-DOWN)
+        ArrayList<int[]> candidates = new ArrayList<>();
+        for (int srcY = 0; srcY < roomH; srcY++) {
+            int tyWorld = (roomH - 1) - srcY;
+            if (tyWorld < 2 || tyWorld > roomH - 3) continue;
+            for (int tx = 0; tx < roomW; tx++) {
+                if (tx < 2 || tx > roomW - 3) continue;
+
+                // Solid wall uses tile id 76 in your collision layer
+                if (col[srcY][tx] == 76) continue;
+
+                candidates.add(new int[]{tx, tyWorld});
+            }
+        }
+
+        if (candidates.isEmpty()) return;
+
+        // Place chests on random floor tiles
+        for (int i = 0; i < count; i++) {
+            int[] pick = candidates.get(local.nextInt(candidates.size()));
+
+            int tx = pick[0];
+            int ty = pick[1];
+
+            // Reward: more souls farther out
+            int reward = 2 + local.nextInt(4) + Math.max(0, dist / 2);
+
+            r.addChest(new Chest(tx * ts, ty * ts, reward));
+        }
+    }
+
+private void handleDoorUsed(Dir dir) {
         if (worldRooms == null || world == null) return;
 
         int nx = worldCellX + dir.dx;

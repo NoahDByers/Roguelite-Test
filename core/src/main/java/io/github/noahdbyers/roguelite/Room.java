@@ -48,7 +48,54 @@ public class Room {
     //Storing information about the room template in a room template object
     private RoomTemplate template;
 
+    // Per-instance interactive props
+    private final ArrayList<Chest> chests = new ArrayList<>();
+
     public enum DoorSide { UP, DOWN, LEFT, RIGHT, NONE }
+
+    /** Deep copy constructor so each world cell can have its own per-room state (chests, etc.). */
+    public Room(Room other) {
+        this.tileSize = other.tileSize;
+        this.roomWidth = other.roomWidth;
+        this.roomHeight = other.roomHeight;
+
+        // Deep copy grids (they are stored TOP-DOWN; renderer flips when drawing)
+        this.draw = deepCopy2D(other.draw);
+        this.collisions = deepCopy2D(other.collisions);
+        this.doors = deepCopy2D(other.doors);
+
+        this.doorUpActive = other.doorUpActive;
+        this.doorDownActive = other.doorDownActive;
+        this.doorLeftActive = other.doorLeftActive;
+        this.doorRightActive = other.doorRightActive;
+
+        this.doorOpenTileId = other.doorOpenTileId;
+        this.doorCoverTileId = other.doorCoverTileId;
+
+        // Shared immutable references are fine
+        this.tileSet = other.tileSet;
+        this.viewport = other.viewport;
+        this.template = other.template;
+
+        // Triggers depend on size/template
+        rebuildDoorTriggers();
+
+        // Ensure collisions reflect the copied door actives, if doors grid exists
+        applyDoorCollisionMask();
+
+        // chests start empty; generation happens per-world cell
+        this.chests.clear();
+    }
+
+    private static int[][] deepCopy2D(int[][] src) {
+        if (src == null) return null;
+        int[][] out = new int[src.length][];
+        for (int i = 0; i < src.length; i++) {
+            out[i] = src[i] == null ? null : src[i].clone();
+        }
+        return out;
+    }
+
     public Room(int tileSize,
                 int roomWidth,
                 int roomHeight,
@@ -240,6 +287,11 @@ public class Room {
 
     public int[][] getDraw() { return draw; }
     public int[][] getCollisions() { return collisions; }
+
+    public ArrayList<Chest> getChests() { return chests; }
+    public void addChest(Chest c) { if (c != null) chests.add(c); }
+    public void clearChests() { chests.clear(); }
+
 
     /** Treat out-of-bounds as solid to prevent leaving the room. */
     public boolean isSolidTile(int tx, int ty) {

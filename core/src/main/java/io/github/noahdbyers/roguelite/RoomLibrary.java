@@ -23,7 +23,8 @@ public class RoomLibrary {
 
     public Room pickRoomForTemplate(int templateId, Random rng) {
         ArrayList<Room> list = roomsByTemplateId.get(templateId);
-        return list.get(rng.nextInt(list.size()));
+        // Return a deep copy so each world cell can maintain per-room state (chests, cleared props, etc.)
+        return new Room(list.get(rng.nextInt(list.size())));
     }
 
     public ArrayList<RoomTemplate> getTemplates() {
