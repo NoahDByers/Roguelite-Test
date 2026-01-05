@@ -764,7 +764,7 @@ public class UserInterface {
 
     private void drawTopLeftBars(float hpPct, float manaPct) {
         final float pad = 14f;
-        final float barW = 220f;
+        final float barW = 240f;
         final float hpH = 16f;
         final float manaH = 12f;
         final float gap = 6f;
@@ -776,14 +776,21 @@ public class UserInterface {
         float hpY = top - hpH;
         float manaY = hpY - gap - manaH;
 
-        // Use a clean, seam-free rectangle bar style.
-        drawSimpleBar(x, hpY, barW, hpH, hpPct, HUD_HP_COLOR);
-        drawSimpleBar(x, manaY, barW, manaH, manaPct, HUD_MANA_COLOR);
+        drawTexturedBar(uiBarBg, uiBarHealthFill,
+            x, hpY, barW, hpPct,
+            8, 7, 5, 6,          // frame pads (L,R,B,T)
+            2, 10, 7, 9          // fill trims (L,R,T,B) for FullHPBar.png
+        );
+
+        drawTexturedBar(uiBarManaBg, uiBarManaFill,
+            x, manaY, barW, manaPct,
+            15, 11, 4, 6,        // frame pads (L,R,B,T)
+            2, 1, 1, 0           // fill trims (L,R,T,B) for FullManaBar.png
+        );
+
 
         // Small icons to the left of each bar.
         float iconSize = 14f;
-        spriteBatch.draw(iconHeart, Math.round(x - iconSize - 6f), Math.round(hpY + (hpH - iconSize) * 0.5f), iconSize, iconSize);
-        spriteBatch.draw(iconMana,  Math.round(x - iconSize - 6f), Math.round(manaY + (manaH - iconSize) * 0.5f), iconSize, iconSize);
     }
 
     private void drawTopRightStats() {
@@ -812,7 +819,7 @@ public class UserInterface {
 
         for (int i = 0; i < 3; i++) {
             float cx = x + colW * i + colW * 0.5f;
-            
+
             String label;
             String value;
             if (i == 0) {
@@ -902,31 +909,47 @@ public class UserInterface {
         spriteBatch.setColor(r, g, b, a);
     }
 
-    private void drawSimpleBar(float x, float y, float w, float h, float pct, Color fillColor) {
+    private void drawTexturedBar(Texture frame, Texture fill,
+                                 float x, float y, float w, float pct,
+                                 int padL, int padR, int padB, int padT,
+                                 int fillTrimL, int fillTrimR, int fillTrimT, int fillTrimB) {
+
         pct = Math.max(0f, Math.min(1f, pct));
 
-        Color c = spriteBatch.getColor();
-        float r = c.r, g = c.g, b = c.b, a = c.a;
+        // Keep the frame's aspect ratio.
+        float scale = w / (float) frame.getWidth();
+        float h = frame.getHeight() * scale;
 
-        // Back
-        spriteBatch.setColor(0f, 0f, 0f, 0.55f);
-        spriteBatch.draw(whitePixel, Math.round(x), Math.round(y), Math.round(w), Math.round(h));
+        // Inner rect (where fill is allowed), derived from the frame sprite.
+        float innerX = x + padL * scale;
+        float innerY = y + padB * scale;
+        float innerW = w - (padL + padR) * scale;
+        float innerH = h - (padT + padB) * scale;
 
-        // Fill
-        float filled = Math.round(w * pct);
-        if (filled > 0) {
-            spriteBatch.setColor(fillColor);
-            spriteBatch.draw(whitePixel, Math.round(x), Math.round(y), filled, Math.round(h));
+        // Always draw the frame so it appears even at 0%.
+        spriteBatch.draw(frame, Math.round(x), Math.round(y), Math.round(w), Math.round(h));
+
+        // Draw cropped fill (using a trimmed source rect so "100%" actually looks full).
+        if (pct > 0f && innerW > 0.5f && innerH > 0.5f) {
+
+            int srcFullW = fill.getWidth()  - fillTrimL - fillTrimR;
+            int srcFullH = fill.getHeight() - fillTrimT - fillTrimB;
+
+            // Safety clamp
+            if (srcFullW <= 0 || srcFullH <= 0) return;
+
+            float drawW = innerW * pct;
+            int srcW = Math.max(1, Math.round(srcFullW * pct));
+
+            spriteBatch.draw(
+                fill,
+                Math.round(innerX), Math.round(innerY),
+                Math.round(drawW), Math.round(innerH),
+                fillTrimL, fillTrimT,   // NOTE: srcY is from TOP in SpriteBatch.draw(...)
+                srcW, srcFullH,
+                false, false
+            );
         }
-
-        // Border
-        spriteBatch.setColor(1f, 1f, 1f, 0.20f);
-        spriteBatch.draw(whitePixel, Math.round(x), Math.round(y), Math.round(w), 2f);
-        spriteBatch.draw(whitePixel, Math.round(x), Math.round(y + h - 2f), Math.round(w), 2f);
-        spriteBatch.draw(whitePixel, Math.round(x), Math.round(y), 2f, Math.round(h));
-        spriteBatch.draw(whitePixel, Math.round(x + w - 2f), Math.round(y), 2f, Math.round(h));
-
-        spriteBatch.setColor(r, g, b, a);
     }
 
     private void drawItemToast() {
