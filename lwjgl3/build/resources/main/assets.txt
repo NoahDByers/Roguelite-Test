@@ -58,6 +58,7 @@ ui/font-window.fnt
 ui/font.fnt
 ui/general_assets.png
 ui/healthUpgrade.png
+ui/keyboard.png
 ui/libgdx.png
 ui/movementUpgrade.png
 ui/shrineSheet.png

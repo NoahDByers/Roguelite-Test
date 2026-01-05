@@ -104,6 +104,15 @@ public class UserInterface {
     private static final float PULSE_AMT = 0.04f;
 
     // ----------------------------
+    // Keyboard glyphs (interaction prompts)
+    // ----------------------------
+    private final Texture keyboardSheet = Utility.loadNearest("ui/keyboard.png");
+    private static final int KEY_TILE = 16; // keyboard sheet is 256x256, 16px tiles
+    // "E" key is at (col=5,row=2) on the provided keyboard sheet
+    private final TextureRegion keyE = new TextureRegion(keyboardSheet, 5 * KEY_TILE, 2 * KEY_TILE, KEY_TILE, KEY_TILE);
+
+
+    // ----------------------------
     // Upgrade Animation State
     // ----------------------------
     private static final float CARD_FRAME_TIME = 0.03f;
@@ -131,6 +140,11 @@ public class UserInterface {
     // in PlayerCombat fields
     private float lockedAimX, lockedAimY;
     private float lockedDirX = 1f, lockedDirY = 0f;
+
+    // Matches GameWorld's door-interact scan behavior
+    private static final int UI_DOOR_SCAN_RADIUS = 2;
+    private static final int UI_DOOR_EDGE_BAND = 2;
+    private static final float UI_DOOR_INTERACT_PAD = 10f;
 
 
     public UserInterface(float width, float height,
@@ -261,6 +275,7 @@ public class UserInterface {
             drawChestPrompt();
             drawDamagePopupsScreenSpace();
             drawShrinePromptIfNear(); // optional UI prompt
+            drawDoorPromptIfNear();
         }
 
         if (world.isChoosingUpgrade()) {
@@ -345,48 +360,68 @@ public class UserInterface {
 
 
 
-// ----------------------------
-// NEW: Chest prompt (SCREEN SPACE)
-// ----------------------------
-private void drawChestPrompt() {
-    Chest c;
-    try {
-        c = world.getNearestInteractableChest();
-    } catch (Throwable t) {
-        return; // if your GameWorld doesn't have chest helpers yet
+    // ----------------------------
+    // NEW: Chest prompt (SCREEN SPACE)
+    // ----------------------------
+    private void drawChestPrompt() {
+        Chest c;
+        try {
+            c = world.getNearestInteractableChest();
+        } catch (Throwable t) {
+            return; // if your GameWorld doesn't have chest helpers yet
+        }
+        if (c == null) return;
+        if (viewport == null) return;
+
+        // Project chest top into UI virtual coords
+        float cx = c.x + c.w * 0.5f;
+        float cy = c.y + c.h + 10f;
+
+        tmpV3.set(cx, cy, 0f);
+        viewport.project(tmpV3);
+
+        float sxToUi = width / (float) viewport.getScreenWidth();
+        float syToUi = height / (float) viewport.getScreenHeight();
+
+        int vx = viewport.getScreenX();
+        int vy = viewport.getScreenY();
+
+        float uiX = (tmpV3.x - vx) * sxToUi;
+        float uiY = (tmpV3.y - vy) * syToUi;
+
+        String action = "Open Chest";
+
+        font.setColor(Color.WHITE);
+        font.getData().setScale(0.9f);
+        drawKeyPrompt(keyE, action, uiX, uiY);
+        font.getData().setScale(1.0f);
     }
-    if (c == null) return;
-    if (viewport == null) return;
 
-    // Project chest top into UI virtual coords
-    float cx = c.x + c.w * 0.5f;
-    float cy = c.y + c.h + 10f;
+    private void drawKeyPrompt(TextureRegion keyRegion, String actionText, float centerX, float centerY) {
+        if (keyRegion == null) {
+            // Fallback to text if glyph is missing
+            drawCenteredText(actionText, centerX, centerY);
+            return;
+        }
+        if (actionText == null) actionText = "";
 
-    tmpV3.set(cx, cy, 0f);
-    viewport.project(tmpV3);
+        // Size in UI virtual units
+        float iconSize = 18f;
+        float gap = 6f;
 
-    float sxToUi = width / (float) viewport.getScreenWidth();
-    float syToUi = height / (float) viewport.getScreenHeight();
+        layout.setText(font, actionText, font.getColor(), 0, Align.left, false);
+        float totalW = iconSize + gap + layout.width;
 
-    int vx = viewport.getScreenX();
-    int vy = viewport.getScreenY();
+        float startX = centerX - totalW * 0.5f;
+        float iconX = startX;
+        float iconY = centerY - iconSize * 0.5f;
 
-    float uiX = (tmpV3.x - vx) * sxToUi;
-    float uiY = (tmpV3.y - vy) * syToUi;
+        spriteBatch.draw(keyRegion, iconX, iconY, iconSize, iconSize);
 
-    String text = "E: Open Chest";
-    if (c.itemReward != null) {
-        // Keep it mysterious (Dead Cells-esque) but still communicate it's an item chest.
-        text += " (Item)";
-    } else if (c.soulReward > 0) {
-        text += " (+" + c.soulReward + " Souls)";
+        float textX = iconX + iconSize + gap;
+        float textY = centerY + layout.height * 0.5f;
+        font.draw(spriteBatch, actionText, textX, textY);
     }
-
-    font.setColor(Color.WHITE);
-    font.getData().setScale(0.9f);
-    drawCenteredText(text, uiX, uiY);
-    font.getData().setScale(1.0f);
-}
 
     private void drawShrinePromptIfNear() {
         // Optional: show “Press E” when player is near shrine.
@@ -429,11 +464,11 @@ private void drawChestPrompt() {
         int vy = viewport.getScreenY();
 
         float uiX = (tmpV3.x - vx) * sxToUi;
-        float uiY = (tmpV3.y - vy) * syToUi;
+        float uiY = (tmpV3.y - vy) * syToUi + 30f;
 
         font.setColor(Color.WHITE);
         font.getData().setScale(0.9f);
-        drawCenteredText("Press E", uiX, uiY);
+        drawKeyPrompt(keyE, "Pray", uiX, uiY);
         font.getData().setScale(1.0f);
     }
 
@@ -777,26 +812,19 @@ private void drawChestPrompt() {
 
         for (int i = 0; i < 3; i++) {
             float cx = x + colW * i + colW * 0.5f;
-
-            Texture icon;
+            
             String label;
             String value;
             if (i == 0) {
-                icon = iconKill;
                 label = "kills";
                 value = String.valueOf(kills);
             } else if (i == 1) {
-                icon = iconSoul;
                 label = "souls";
                 value = String.valueOf(souls);
             } else {
-                icon = iconCoin;
                 label = "coins";
                 value = String.valueOf(coins);
             }
-
-            // Icon
-            spriteBatch.draw(icon, Math.round(cx - iconSize * 0.5f), Math.round(y + boxH - iconSize - 6f), iconSize, iconSize);
 
             // Label
             font.getData().setScale(0.55f);
@@ -1048,6 +1076,168 @@ private void drawChestPrompt() {
         return spriteBatch;
     }
 
+    private void drawDoorPromptIfNear() {
+        // Don't show door prompt if a higher-priority prompt is active
+        // Door prompt is lowest priority: hide it if shrine/chest prompt should show
+        if (hasChestPromptActive() || hasShrinePromptActive()) return;
+
+        Player p = world.getPlayer();
+        Room room = world.getRoom();
+        if (p == null || room == null) return;
+        if (viewport == null) return;
+
+        int ts = room.getTileSize();
+        int roomW = room.getRoomWidth();
+        int roomH = room.getRoomHeight();
+
+        float px = p.getX();
+        float py = p.getY();
+        float pw = p.getWidth();
+        float ph = p.getHeight();
+
+        float pcx = px + pw * 0.5f;
+        float pcy = py + ph * 0.5f;
+
+        int pTileX = (int)Math.floor(pcx / ts);
+        int pTileY = (int)Math.floor(pcy / ts);
+
+        // Find the best (closest) door tile we are overlapping
+        Dir bestDir = null;
+        float bestDoorCenterX = 0f;
+        float bestDoorTopY = 0f;
+        float bestDist2 = Float.MAX_VALUE;
+
+        for (int dy = -UI_DOOR_SCAN_RADIUS; dy <= UI_DOOR_SCAN_RADIUS; dy++) {
+            for (int dx = -UI_DOOR_SCAN_RADIUS; dx <= UI_DOOR_SCAN_RADIUS; dx++) {
+                int tx = pTileX + dx;
+                int tyWorld = pTileY + dy;
+
+                if (tx < 0 || tx >= roomW || tyWorld < 0 || tyWorld >= roomH) continue;
+                if (!isDoorWorld(room, tx, tyWorld, roomH)) continue;
+
+                float doorX = tx * ts;
+                float doorY = tyWorld * ts;
+
+                float rx = doorX - UI_DOOR_INTERACT_PAD;
+                float ry = doorY - UI_DOOR_INTERACT_PAD;
+                float rw = ts + UI_DOOR_INTERACT_PAD * 2f;
+                float rh = ts + UI_DOOR_INTERACT_PAD * 2f;
+
+                if (!overlaps(px, py, pw, ph, rx, ry, rw, rh)) continue;
+
+                Dir dir = dirFromDoorTile(tx, tyWorld, roomW, roomH);
+                if (dir == null) continue;
+
+                float cx = doorX + ts * 0.5f;
+                float cy = doorY + ts * 0.5f;
+                float ddx = cx - pcx;
+                float ddy = cy - pcy;
+                float d2 = ddx * ddx + ddy * ddy;
+
+                if (d2 < bestDist2) {
+                    bestDist2 = d2;
+                    bestDir = dir;
+                    bestDoorCenterX = cx;
+                    bestDoorTopY = doorY + ts + 10f; // prompt above the door tile
+                }
+            }
+        }
+
+        if (bestDir == null) return;
+
+        // WORLD -> SCREEN -> UI virtual coordinates (same pattern as chest/shrine prompt)
+        tmpV3.set(bestDoorCenterX, bestDoorTopY, 0f);
+        viewport.project(tmpV3);
+
+        float sxToUi = width / (float) viewport.getScreenWidth();
+        float syToUi = height / (float) viewport.getScreenHeight();
+
+        int vx = viewport.getScreenX();
+        int vy = viewport.getScreenY();
+
+        float uiX = (tmpV3.x - vx) * sxToUi;
+        float uiY = (tmpV3.y - vy) * syToUi;
+
+        // You can customize the label:
+        // e.g. "Enter", "Use Door", or include direction.
+        String label = "Enter";
+        // Optional direction text:
+        // label = "Enter (" + bestDir.name() + ")";
+
+        drawKeyPrompt(keyE, label, uiX, uiY);
+    }
+
+    private static boolean overlaps(float ax, float ay, float aw, float ah,
+                                    float bx, float by, float bw, float bh) {
+        return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
+    }
+
+    private boolean isDoorWorld(Room room, int tx, int tyWorld, int roomH) {
+        // Room door grid is stored in data coords (top-down), world is bottom-up
+        int tyData = (roomH - 1) - tyWorld;
+        try {
+            return room.isDoor(tx, tyData);
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    private Dir dirFromDoorTile(int tx, int tyWorld, int roomW, int roomH) {
+        if (tyWorld >= roomH - UI_DOOR_EDGE_BAND) return Dir.UP;
+        if (tyWorld < UI_DOOR_EDGE_BAND) return Dir.DOWN;
+        if (tx < UI_DOOR_EDGE_BAND) return Dir.LEFT;
+        if (tx >= roomW - UI_DOOR_EDGE_BAND) return Dir.RIGHT;
+        return null;
+    }
+
+    private boolean hasChestPrompt() {
+        Player p = world.getPlayer();
+        if (p == null) return false;
+
+        for (Chest c : world.getChests()) {
+            if (c == null || c.opened) continue;
+
+            if (Math.abs(c.x - p.getX()) <= 80 && Math.abs(c.y - p.getY()) <= 80) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean hasChestPromptActive() {
+        try {
+            return world.getNearestInteractableChest() != null;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    private boolean hasShrinePromptActive() {
+        Player p = world.getPlayer();
+        if (p == null) return false;
+
+        Shrine s;
+        try {
+            s = world.getShrine();
+        } catch (Throwable t) {
+            return false;
+        }
+        if (s == null) return false;
+
+        float px = p.getX() + p.getWidth() * 0.5f;
+        float py = p.getY() + p.getHeight() * 0.5f;
+
+        float sx = s.x + s.w * 0.5f;
+        float sy = s.y + s.h * 0.5f;
+
+        float dx = sx - px;
+        float dy = sy - py;
+        float dist2 = dx * dx + dy * dy;
+
+        float near = 60f; // must match drawShrinePromptIfNear()
+        return dist2 <= near * near;
+    }
+
     public void dispose() {
         fallbackCardTexture.dispose();
         whitePixel.dispose();
@@ -1068,6 +1258,8 @@ private void drawChestPrompt() {
         // NEW
         shrineSheet.dispose();
         // dropTextureRegion uses iconSoul, so nothing additional to dispose
+
+        keyboardSheet.dispose();
 
         System.out.println("World dispose called");
     }
