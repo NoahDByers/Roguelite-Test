@@ -64,10 +64,11 @@ public class Main extends ApplicationAdapter {
     private static final int WORLD_H = 10;
 
     // Chests (dungeonTileSheet sprite index 93)
-    private static final int CHEST_TILE_INDEX = 94;
-    private static final float CHEST_CHANCE_BASE = 0.98f;
+    private static final int CHEST_TILE_INDEX = 93;
+    private static final float CHEST_CHANCE_BASE = 0.78f;
     private static final float CHEST_CHANCE_PER_DIST = 0.03f;   // farther from start => more chests
     private static final float CHEST_SECOND_CHANCE = 0.06f;
+    private static final float CHEST_ITEM_CHANCE = 1f;       // chance chest contains an item instead of souls
     private Room[][] worldRooms;          // [y][x]
     private int[][] chosenTemplates;      // [y][x]
     private int worldCellX = 5;
@@ -482,7 +483,15 @@ public class Main extends ApplicationAdapter {
             // Reward: more souls farther out
             int reward = 2 + local.nextInt(4) + Math.max(0, dist / 2);
 
-            r.addChest(new Chest(tx * ts, ty * ts, reward));
+            // Some chests contain items.
+            ItemId item = null;
+            int soulReward = reward;
+            if (local.nextFloat() < CHEST_ITEM_CHANCE) {
+                item = ItemRegistry.rollRandom(local);
+                soulReward = 0;
+            }
+
+            r.addChest(new Chest(tx * ts, ty * ts, soulReward, item));
         }
     }
 

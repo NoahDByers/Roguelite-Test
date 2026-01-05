@@ -19,6 +19,15 @@ public abstract class Enemy {
     private float flashTimer = 0f;
     private static final float FLASH_TIME = 0.08f;
 
+    // ----------------------------
+    // Simple status effects (used by items)
+    // ----------------------------
+    private float burnTimeLeft = 0f;
+    private float burnTickLeft = 0f;
+    private int burnDamage = 0;
+    private float burnTickInterval = 0.5f;
+    private DamageType burnType = DamageType.FIRE;
+
     // Hitstun
     private float hitstunTimer = 0f;
 
@@ -75,6 +84,38 @@ public abstract class Enemy {
         health -= amount;
         if (health < 0) health = 0;
         flashTimer = FLASH_TIME;
+    }
+
+    /**
+     * Typed damage hook (future-proofing). For now, damage types don't change behavior.
+     */
+    public void takeDamage(int amount, DamageType type) {
+        takeDamage(amount);
+    }
+
+    /** Apply a simple burning DoT. If already burning, refreshes duration if longer. */
+    public void applyBurn(int damagePerTick, float durationSeconds, float tickIntervalSeconds, DamageType type) {
+        if (damagePerTick <= 0 || durationSeconds <= 0f) return;
+        burnDamage = Math.max(burnDamage, damagePerTick);
+        burnTickInterval = Math.max(0.1f, tickIntervalSeconds);
+        burnType = (type != null) ? type : burnType;
+        burnTimeLeft = Math.max(burnTimeLeft, durationSeconds);
+        burnTickLeft = Math.min(burnTickLeft, burnTickInterval);
+    }
+
+    /** Tick DoT / future statuses from GameWorld each frame. */
+    public void tickStatus(float dt) {
+        if (burnTimeLeft > 0f) {
+            burnTimeLeft -= dt;
+            burnTickLeft -= dt;
+            while (burnTimeLeft > 0f && burnTickLeft <= 0f) {
+                takeDamage(burnDamage, burnType);
+                burnTickLeft += burnTickInterval;
+            }
+            if (burnTimeLeft <= 0f) {
+                burnTimeLeft = 0f;
+            }
+        }
     }
 
     public boolean isDead() {

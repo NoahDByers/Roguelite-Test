@@ -69,6 +69,9 @@ public class Player extends Entity {
     private float invulnTimer = 0f;
     private final float invulnDuration = 0.5f;
 
+    // Items / global modifiers
+    private float damageTakenMultiplier = 1f;
+
     public Player(float x, float y, float speed, float width, float height) {
         super(x, y, speed, width, height);
 
@@ -270,7 +273,11 @@ public class Player extends Entity {
 
     public void takeDamage(int amount) {
         if (isInvulnerable()) return;
-        health -= amount;
+        int finalAmt = amount;
+        if (finalAmt > 0) {
+            finalAmt = Math.max(1, Math.round(finalAmt * damageTakenMultiplier));
+        }
+        health -= finalAmt;
         if (health < 0) health = 0;
         invulnTimer = invulnDuration;
     }
@@ -290,6 +297,13 @@ public class Player extends Entity {
         maxHealth += amount;
         health += amount;
     }
+
+    public void setDamageTakenMultiplier(float mult) {
+        if (mult <= 0f) mult = 1f;
+        damageTakenMultiplier = mult;
+    }
+
+    public float getDamageTakenMultiplier() { return damageTakenMultiplier; }
 
     // -------------------- Collision (NEW SYSTEM) --------------------
     private boolean collidesWithRoom(Room room) {
@@ -419,10 +433,6 @@ public class Player extends Entity {
 
         dashTimer = dashDuration;
         dashCooldown = dashCooldownTime;
-
-        // Dead Cells-like feel: roll gives brief i-frames and breaks attack-facing lock.
-        invulnTimer = Math.max(invulnTimer, dashDuration + 0.05f);
-        attackLockTimer = 0f;
     }
 
     public void dispose() {

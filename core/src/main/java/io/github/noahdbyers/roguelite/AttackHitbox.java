@@ -12,6 +12,8 @@ public class AttackHitbox {
     public float reach;
     public float timeLeft;
     public int damage;
+    public DamageType damageType = DamageType.PHYSICAL;
+    public boolean crit = false;
     public float strength = 1f;   // 1 = normal, >1 = stronger
     public float hitStop = 0.08f; // seconds; can be derived from strength
 

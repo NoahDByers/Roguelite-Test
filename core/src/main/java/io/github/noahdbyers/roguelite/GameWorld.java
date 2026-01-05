@@ -14,6 +14,14 @@ import java.util.IdentityHashMap;
 import java.util.Random;
 
 public class GameWorld {
+
+    // -------------------- Items --------------------
+    private final ItemSystem items = new ItemSystem();
+
+    // Simple pickup toast for UI
+    private String toastText = null;
+    private float toastTimer = 0f;
+
     // -------------------- Shrine / shop --------------------
     private Shrine shrine;
     private boolean shrineOpen = false;
@@ -68,8 +76,24 @@ public class GameWorld {
 
             c.opened = true;
 
-            // Reward: souls (chest stores its own reward for determinism)
-            if (c.soulReward > 0) souls += c.soulReward;
+            // Reward: item or souls
+            if (c.itemReward != null) {
+                boolean got = items.addItem(c.itemReward, this);
+                ItemDefinition def = ItemRegistry.get(c.itemReward);
+                if (got) {
+                    showToast("Picked up: " + (def != null ? def.name : c.itemReward.name()), 2.2f);
+                } else {
+                    // duplicate unique item -> compensation souls
+                    int comp = items.modifySouls(Math.max(2, c.soulReward));
+                    souls += comp;
+                    showToast("Duplicate item → +" + comp + " souls", 1.8f);
+                }
+            } else if (c.soulReward > 0) {
+                int gained = items.modifySouls(c.soulReward);
+                souls += gained;
+                items.onSoulsPicked(this, gained);
+                showToast("+" + gained + " souls", 1.2f);
+            }
 
             if (audio != null) audio.playUIClick();
 
@@ -250,6 +274,18 @@ public class GameWorld {
     public int getCoins() { return coins; }
     public int getSouls() { return souls; }
 
+    public ItemSystem getItems() { return items; }
+    public Random getRng() { return rng; }
+
+    public String getToastText() { return toastText; }
+    public float getToastTimer() { return toastTimer; }
+
+    public void showToast(String text, float seconds) {
+        if (text == null || text.isEmpty()) return;
+        toastText = text;
+        toastTimer = Math.max(toastTimer, seconds);
+    }
+
     /** Cost UI helper for shrine purchases (0 if not applicable). */
     public int getUpgradeCost(int index) {
         if (!choosingUpgrade) return 0;
@@ -357,6 +393,18 @@ public class GameWorld {
             return;
         }
 
+        // Apply item-derived defense each frame (covers pickups mid-room)
+        player.setDamageTakenMultiplier(items.getDamageTakenMultiplier());
+
+        // Toast timer
+        if (toastTimer > 0f) {
+            toastTimer -= delta;
+            if (toastTimer <= 0f) {
+                toastTimer = 0f;
+                toastText = null;
+            }
+        }
+
         // Dead Cells-like: roll/dash input (processed before movement so it happens this frame)
         handleDashInput();
 
@@ -369,6 +417,9 @@ public class GameWorld {
         for (Enemy e : enemies) {
             if (e == null) continue;
             e.update(player, room, room.getTileSize());
+            // Global ticks (Zombie doesn't tick these itself)
+            e.tickFlash(delta);
+            e.tickStatus(delta);
         }
 
         updateDropPickups();
@@ -394,6 +445,7 @@ public class GameWorld {
         if (waveActive && enemies.isEmpty()) {
             waveActive = false;
             wave++;
+            items.onWaveCleared(this);
             if (roomClearListener != null) roomClearListener.onRoomCleared();
             maybeSpawnShrine();
         }
@@ -592,14 +644,26 @@ public class GameWorld {
                 continue;
             }
 
-            enemies.add(new Zombie(x, y, speed, hbW, hbH, 3));
+            float s = speed;
+            int hp = 3;
+            if (items.has(ItemId.BLESSED_ASH) && rng.nextFloat() < 0.25f) {
+                hp = 2;
+                s = speed * 0.9f;
+            }
+            enemies.add(new Zombie(x, y, s, hbW, hbH, hp));
             return;
         }
 
         float[] open = findFirstOpenSpotRect(hbW, hbH, minDist);
         if (open != null) {
             if (!rectHitsCollision(room, open[0], open[1], hbW, hbH)) {
-                enemies.add(new Zombie(open[0], open[1], speed, hbW, hbH, 3));
+                float s = speed;
+                int hp = 3;
+                if (items.has(ItemId.BLESSED_ASH) && rng.nextFloat() < 0.25f) {
+                    hp = 2;
+                    s = speed * 0.9f;
+                }
+                enemies.add(new Zombie(open[0], open[1], s, hbW, hbH, hp));
             }
         }
     }
@@ -678,10 +742,48 @@ public class GameWorld {
             if (d == null) continue;
 
             if (overlaps(px, py, pw, ph, d.x, d.y, d.w, d.h)) {
-                souls += d.value;
+                int gained = items.modifySouls(d.value);
+                souls += gained;
+                items.onSoulsPicked(this, gained);
                 drops.remove(i);
             }
         }
+    }
+
+    // -------------------- Item helpers --------------------
+    public void spawnRandomSoulDrop(int value) {
+        if (room == null) return;
+        float[] p = findFirstOpenSpotRect(12f, 12f, 0f);
+        if (p == null) return;
+        drops.add(new Drop(p[0], p[1], Math.max(1, value)));
+    }
+
+    public void spawnDamagePopup(Enemy enemy, int amount) {
+        if (enemy == null) return;
+        float popX = enemy.getX() + enemy.getWidth() * 0.5f;
+        float popY = enemy.getY() + enemy.getHeight() + 10f;
+        damagePopups.add(new DamagePopup(popX, popY, amount));
+    }
+
+    /** Find nearest enemy within radius of (x,y). Optionally ignore one enemy. */
+    public Enemy findNearestEnemy(float x, float y, float radius, Enemy ignore) {
+        if (enemies == null || enemies.isEmpty()) return null;
+        float r2 = radius * radius;
+        Enemy best = null;
+        float bestD2 = r2;
+        for (Enemy e : enemies) {
+            if (e == null || e == ignore) continue;
+            float ex = e.getX() + e.getWidth() * 0.5f;
+            float ey = e.getY() + e.getHeight() * 0.5f;
+            float dx = ex - x;
+            float dy = ey - y;
+            float d2 = dx * dx + dy * dy;
+            if (d2 <= bestD2) {
+                bestD2 = d2;
+                best = e;
+            }
+        }
+        return best;
     }
 
     // -------------------- Shrine (shop) --------------------
@@ -914,9 +1016,16 @@ public class GameWorld {
         float hitH = 64f;
         float duration = 0.08f;
 
-        int damage = (weapon != null) ? weapon.getDamage() : 1;
+        int baseWeaponDamage = (weapon != null) ? weapon.getDamage() : 1;
+        DamageType type = items.nextAttackDamageType();
+
+        int damage = items.computeMainDamage(baseWeaponDamage);
+        boolean crit = items.rollCrit(rng);
+        if (crit) damage = items.applyCritMultiplier(damage);
 
         AttackHitbox hb = new AttackHitbox(hitW, hitH, dir, reach, duration, damage, px, py);
+        hb.damageType = type;
+        hb.crit = crit;
 
         // ✅ Strength controls "impact feel"
         hb.strength = Math.max(0.5f, strength);
@@ -972,14 +1081,17 @@ public class GameWorld {
                     hb.rect.x, hb.rect.y, hb.rect.width, hb.rect.height,
                     enemy.getX(), enemy.getY(), enemy.getWidth(), enemy.getHeight()
                 )) {
-                    enemy.takeDamage(hb.damage);
+                    // Main hit
+                    enemy.takeDamage(hb.damage, hb.damageType);
                     // Tell combat system we connected a hit (for hit-confirm cancels/recovery)
                     combat.notifyHitConfirmed();
                     alreadyHit.add(enemy);
 
-                    float popX = enemy.getX() + enemy.getWidth() * 0.5f;
-                    float popY = enemy.getY() + enemy.getHeight() + 10f;
-                    damagePopups.add(new DamagePopup(popX, popY, hb.damage));
+                    spawnDamagePopup(enemy, hb.damage);
+
+                    // On-hit item effects (may apply extra damage/status)
+                    int baseWeaponDamage = (weapon != null) ? weapon.getDamage() : 1;
+                    items.onHitEnemy(this, enemy, hb.crit, baseWeaponDamage);
 
                     enemy.takeKnockback(hb.dir.x, hb.dir.y, 400f);
                     float stun = stunFromStrength(hb.strength);

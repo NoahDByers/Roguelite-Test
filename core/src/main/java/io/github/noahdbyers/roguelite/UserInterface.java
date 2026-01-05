@@ -357,7 +357,12 @@ private void drawChestPrompt() {
     float uiY = (tmpV3.y - vy) * syToUi;
 
     String text = "E: Open Chest";
-    if (c.soulReward > 0) text += " (+" + c.soulReward + " Souls)";
+    if (c.itemReward != null) {
+        // Keep it mysterious (Dead Cells-esque) but still communicate it's an item chest.
+        text += " (Item)";
+    } else if (c.soulReward > 0) {
+        text += " (+" + c.soulReward + " Souls)";
+    }
 
     font.setColor(Color.WHITE);
     font.getData().setScale(0.9f);
@@ -698,6 +703,51 @@ private void drawChestPrompt() {
 
         drawSmallStat(iconKill, startX - 148, 490, "  " + world.getEnemiesKilled());
         drawSmallStat(iconWave, startX - 140, 450, "" + world.getWave());
+
+        drawItemToast();
+        drawItemList();
+    }
+
+    private void drawItemToast() {
+        String toast = null;
+        try { toast = world.getToastText(); } catch (Throwable ignored) {}
+        if (toast == null || toast.isEmpty()) return;
+
+        font.setColor(Color.WHITE);
+        font.getData().setScale(0.95f);
+        drawCenteredText(toast, width / 2f, height - 26f);
+        font.getData().setScale(1.0f);
+    }
+
+    private void drawItemList() {
+        ItemSystem items;
+        try { items = world.getItems(); } catch (Throwable t) { return; }
+        if (items == null || items.getOwnedList() == null || items.getOwnedList().isEmpty()) return;
+
+        float x = 16f;
+        float y = height - 80f;
+
+        font.setColor(Color.WHITE);
+        font.getData().setScale(0.75f);
+
+        font.draw(spriteBatch, "Items:", x, y);
+        y -= 16f;
+
+        int shown = 0;
+        for (ItemId id : items.getOwnedList()) {
+            if (id == null) continue;
+            ItemDefinition def = ItemRegistry.get(id);
+            String name = (def != null) ? def.name : id.name();
+            font.draw(spriteBatch, "• " + name, x, y);
+            y -= 14f;
+            shown++;
+            if (shown >= 7) {
+                font.draw(spriteBatch, "...", x, y);
+                break;
+            }
+        }
+
+        font.getData().setScale(1.0f);
     }
 
     private void updateSelectionHighlight() {
