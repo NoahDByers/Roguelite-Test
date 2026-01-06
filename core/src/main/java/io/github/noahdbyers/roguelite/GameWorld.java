@@ -469,7 +469,6 @@ public class GameWorld {
             wave++;
             items.onWaveCleared(this);
             if (roomClearListener != null) roomClearListener.onRoomCleared();
-            maybeSpawnShrine();
         }
 
         if (player.getHealth() <= 0) gameOver = true;
@@ -571,9 +570,11 @@ public class GameWorld {
         damagePopups.clear();
         drops.clear();
 
-        shrine = null;
         shrineOpen = false;
         choosingUpgrade = false;
+
+        // Shrine is persistent per room.
+        syncShrineFromRoom();
 
         waveActive = false;
     }
@@ -585,13 +586,45 @@ public class GameWorld {
         damagePopups.clear();
         drops.clear();
 
-        shrine = null;
         shrineOpen = false;
         choosingUpgrade = false;
+
+        // Shrine is persistent per room.
+        syncShrineFromRoom();
 
         waveActive = false;
 
         if (shouldStartWave) startWave();
+    }
+
+    /** Pull the shrine for the current room (and lazily instantiate it if the room has a marker). */
+    private void syncShrineFromRoom() {
+        shrine = null;
+        if (room == null) return;
+
+        try {
+            Shrine s = room.getShrine();
+
+            // If Main marked this room for a shrine but we haven't instantiated it yet,
+            // build it now using GameWorld's upgrade assets so the shop UI works.
+            if (s == null && room.hasShrineMarker()) {
+                float x = room.getShrineSpawnX();
+                float y = room.getShrineSpawnY();
+
+                Upgrade[] stock = new Upgrade[] { randomUpgrade(), randomUpgrade(), randomUpgrade() };
+                int[] costs = new int[] {
+                    costFor(stock[0]),
+                    costFor(stock[1]),
+                    costFor(stock[2])
+                };
+                s = new Shrine(x, y, stock, costs);
+                room.setShrine(s);
+            }
+
+            shrine = s;
+        } catch (Throwable t) {
+            shrine = null;
+        }
     }
 
     // -------------------- Restart --------------------
@@ -809,21 +842,6 @@ public class GameWorld {
     }
 
     // -------------------- Shrine (shop) --------------------
-    private void maybeSpawnShrine() {
-        if (rng.nextFloat() > 0.9f) return; // 10% chance
-
-        float[] p = findFirstOpenSpotRect(32f, 32f, 0f);
-        if (p == null) return;
-
-        Upgrade[] stock = new Upgrade[] { randomUpgrade(), randomUpgrade(), randomUpgrade() };
-        int[] costs = new int[] {
-            costFor(stock[0]),
-            costFor(stock[1]),
-            costFor(stock[2])
-        };
-        shrine = new Shrine(p[0], p[1], stock, costs);
-    }
-
     public boolean isPlayerNearShrine() {
         if (player == null || shrine == null) return false;
 

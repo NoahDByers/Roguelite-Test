@@ -51,6 +51,15 @@ public class Room {
     // Per-instance interactive props
     private final ArrayList<Chest> chests = new ArrayList<>();
 
+    // -------------------- Shrine (per-room persistence) --------------------
+    /** Marker that this room should have a shrine and where it should spawn. */
+    private boolean hasShrineMarker = false;
+    private float shrineSpawnX = 0f;
+    private float shrineSpawnY = 0f;
+
+    /** The actual instantiated shrine for this room (persists purchases across revisits). */
+    private Shrine shrine = null;
+
     public enum DoorSide { UP, DOWN, LEFT, RIGHT, NONE }
 
     /** Deep copy constructor so each world cell can have its own per-room state (chests, etc.). */
@@ -85,6 +94,13 @@ public class Room {
 
         // chests start empty; generation happens per-world cell
         this.chests.clear();
+
+        // Shrine marker is copied so each cell keeps its shrine placement.
+        this.hasShrineMarker = other.hasShrineMarker;
+        this.shrineSpawnX = other.shrineSpawnX;
+        this.shrineSpawnY = other.shrineSpawnY;
+        // Actual shrine instance is per-run/per-room and starts unset.
+        this.shrine = null;
     }
 
     private static int[][] deepCopy2D(int[][] src) {
@@ -291,6 +307,22 @@ public class Room {
     public ArrayList<Chest> getChests() { return chests; }
     public void addChest(Chest c) { if (c != null) chests.add(c); }
     public void clearChests() { chests.clear(); }
+
+    // -------------------- Shrine helpers --------------------
+    /** Marks that this room should have a shrine at the given world position (pixels). */
+    public void setShrineSpawnPoint(float x, float y) {
+        hasShrineMarker = true;
+        shrineSpawnX = x;
+        shrineSpawnY = y;
+    }
+
+    public boolean hasShrineMarker() { return hasShrineMarker; }
+    public float getShrineSpawnX() { return shrineSpawnX; }
+    public float getShrineSpawnY() { return shrineSpawnY; }
+
+    /** The instantiated shrine object (persists across revisits). */
+    public Shrine getShrine() { return shrine; }
+    public void setShrine(Shrine shrine) { this.shrine = shrine; }
 
 
     /** Treat out-of-bounds as solid to prevent leaving the room. */
