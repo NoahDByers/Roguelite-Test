@@ -84,6 +84,12 @@ public class Main extends ApplicationAdapter {
     private static final float CHEST_CHANCE_PER_DIST = 0.03f;   // farther from start => more chests
     private static final float CHEST_SECOND_CHANCE = 0.06f;
     private static final float CHEST_ITEM_CHANCE = 1f;       // chance chest contains an item instead of souls
+
+    // Shrines: we mark their spawn position during world generation, and GameWorld instantiates
+    // the actual Shrine object the first time you enter the room.
+    private static final float SHRINE_ROOM_CHANCE = 1.0f; // 1.0 = shrine in every room
+    private static final float SHRINE_W = 32f;
+    private static final float SHRINE_H = 32f;
     private Room[][] worldRooms;          // [y][x]
     private int[][] chosenTemplates;      // [y][x]
     private int worldCellX = 5;
@@ -271,6 +277,7 @@ public class Main extends ApplicationAdapter {
             for (int x = 0; x < WORLD_W; x++) {
                 int tid = chosenTemplates[y][x];
                 worldRooms[y][x] = lib.pickRoomForTemplate(tid, rng);
+                generateShrineMarkerForRoom(worldRooms[y][x], rng, x, y);
                 generateChestsForRoom(worldRooms[y][x], rng, x, y);
 
             }
@@ -308,8 +315,7 @@ public class Main extends ApplicationAdapter {
             if (dungeonMap != null) dungeonMap.setCleared(worldCellX, worldCellY, true);
         });
 
-
-        // Authoritative instances
+// Authoritative instances
         player = world.getPlayer();
         room = world.getRoom();
 
@@ -329,10 +335,10 @@ public class Main extends ApplicationAdapter {
         uiViewport.update(width, height, true);
 
         if (room != null) room.setViewport(viewport);
-        if (UI != null) UI.setUiViewport(uiViewport);
-
-        // Provide dungeon map for minimap/map overlay
-        if (UI != null) UI.setDungeonMap(dungeonMap);
+        if (UI != null) {
+            UI.setUiViewport(uiViewport);
+            UI.setDungeonMap(dungeonMap);
+        }
     }
 
     @Override
@@ -512,6 +518,72 @@ public class Main extends ApplicationAdapter {
         return Math.max(lo, Math.min(hi, v));
     }
 
+    // -------------------- Shrine + chest placement helpers --------------------
+    private static final int COLLISION_SOLID = 76;
+
+    /**
+     * Mark a shrine spawn point for this room.
+     * The shrine itself is created lazily by GameWorld when you enter the room, so it can use
+     * the correct Upgrade assets and persist purchases across revisits.
+     */
+    private void generateShrineMarkerForRoom(Room r, Random rng, int cellX, int cellY) {
+        if (r == null) return;
+
+        // Deterministic per-cell seed (independent of generation order).
+        long seed = 0x51E11AA5L ^ (cellX * 73856093L) ^ (cellY * 19349663L);
+        Random local = new Random(seed);
+
+        if (local.nextFloat() > SHRINE_ROOM_CHANCE) return;
+
+        // Prefer center-ish placement.
+        float[] p = findOpenSpotNearCenterRect(r, local, 32f, 32f);
+        if (p == null) return;
+
+        r.setShrineSpawnPoint(p[0], p[1]);
+    }
+
+    /** Find an open rectangle position biased toward the center of the room. */
+    private float[] findOpenSpotNearCenterRect(Room r, Random local, float w, float h) {
+        if (r == null) return null;
+        int ts = r.getTileSize();
+        int roomW = r.getRoomWidth();
+        int roomH = r.getRoomHeight();
+
+        int cx = roomW / 2;
+        int cy = roomH / 2;
+
+        // Expand outward from center and pick a random valid tile from the first radius that has any.
+        for (int rad = 0; rad <= Math.max(roomW, roomH); rad++) {
+            ArrayList<int[]> candidates = new ArrayList<>();
+
+            int minX = Math.max(1, cx - rad);
+            int maxX = Math.min(roomW - 2, cx + rad);
+            int minY = Math.max(1, cy - rad);
+            int maxY = Math.min(roomH - 2, cy + rad);
+
+            for (int ty = minY; ty <= maxY; ty++) {
+                for (int tx = minX; tx <= maxX; tx++) {
+                    // Only consider the outer ring at this radius (so we expand smoothly)
+                    if (rad > 0 && tx > minX && tx < maxX && ty > minY && ty < maxY) continue;
+
+                    float x = tx * ts + (ts - w) * 0.5f;
+                    float y = ty * ts + (ts - h) * 0.5f;
+
+                    if (rectHitsCollision(r, x, y, w, h)) continue;
+                    candidates.add(new int[]{tx, ty});
+                }
+            }
+
+            if (!candidates.isEmpty()) {
+                int[] pick = candidates.get(local.nextInt(candidates.size()));
+                float x = pick[0] * ts + (ts - w) * 0.5f;
+                float y = pick[1] * ts + (ts - h) * 0.5f;
+                return new float[]{x, y};
+            }
+        }
+
+        return null;
+    }
 
     private void generateChestsForRoom(Room r, Random rng, int cellX, int cellY) {
         if (r == null) return;
@@ -544,26 +616,48 @@ public class Main extends ApplicationAdapter {
         int roomH = r.getRoomHeight();
         int ts = r.getTileSize();
 
-        // Candidate tiles (avoid edges/doors; collisions are stored TOP-DOWN)
-        ArrayList<int[]> candidates = new ArrayList<>();
+        // Candidate tiles (prefer edges; collisions are stored TOP-DOWN)
+        // We stay at least 2 tiles inside the outer wall, but bias toward the "edge band".
+        final int INNER_MARGIN = 2;
+        final int EDGE_BAND = 3; // how many tiles inward to consider "edge"
+
+        ArrayList<int[]> allCandidates = new ArrayList<>();
+        ArrayList<int[]> edgeCandidates = new ArrayList<>();
+
+        int minTx = INNER_MARGIN;
+        int maxTx = roomW - 1 - INNER_MARGIN;
+        int minTy = INNER_MARGIN;
+        int maxTy = roomH - 1 - INNER_MARGIN;
+
+        int edgeTxMax = minTx + (EDGE_BAND - 1);
+        int edgeTxMin = maxTx - (EDGE_BAND - 1);
+        int edgeTyMax = minTy + (EDGE_BAND - 1);
+        int edgeTyMin = maxTy - (EDGE_BAND - 1);
+
         for (int srcY = 0; srcY < roomH; srcY++) {
             int tyWorld = (roomH - 1) - srcY;
-            if (tyWorld < 2 || tyWorld > roomH - 3) continue;
+            if (tyWorld < minTy || tyWorld > maxTy) continue;
+
             for (int tx = 0; tx < roomW; tx++) {
-                if (tx < 2 || tx > roomW - 3) continue;
+                if (tx < minTx || tx > maxTx) continue;
 
-                // Solid wall uses tile id 76 in your collision layer
-                if (col[srcY][tx] == 76) continue;
+                if (col[srcY][tx] == COLLISION_SOLID) continue;
 
-                candidates.add(new int[]{tx, tyWorld});
+                int[] cand = new int[]{tx, tyWorld};
+                allCandidates.add(cand);
+
+                boolean nearEdge = (tx <= edgeTxMax) || (tx >= edgeTxMin) || (tyWorld <= edgeTyMax) || (tyWorld >= edgeTyMin);
+                if (nearEdge) edgeCandidates.add(cand);
             }
         }
 
+        ArrayList<int[]> candidates = !edgeCandidates.isEmpty() ? edgeCandidates : allCandidates;
         if (candidates.isEmpty()) return;
 
-        // Place chests on random floor tiles
-        for (int i = 0; i < count; i++) {
-            int[] pick = candidates.get(local.nextInt(candidates.size()));
+        // Place chests on random floor tiles (avoid duplicates)
+        for (int i = 0; i < count && !candidates.isEmpty(); i++) {
+            int idx = local.nextInt(candidates.size());
+            int[] pick = candidates.remove(idx);
 
             int tx = pick[0];
             int ty = pick[1];
@@ -767,9 +861,6 @@ private void handleDoorUsed(Dir dir) {
 
         if (audio != null) audio.dispose();
     }
-
-    // Match your collision rule
-    private static final int COLLISION_SOLID = 76;
 
     private Vector2 findSafeSpawn(Room room, float pw, float ph) {
         if (room == null) return new Vector2(100, 100);
