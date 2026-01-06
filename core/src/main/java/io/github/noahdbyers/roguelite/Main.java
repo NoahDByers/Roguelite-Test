@@ -98,6 +98,9 @@ public class Main extends ApplicationAdapter {
     private GameWorld world;
     private UserInterface UI;
 
+    // Dungeon map state (for minimap and full map)
+    private DungeonMap dungeonMap;
+
     // Title screen buttons
     private Button playButton;
     private Button settingsCogButton;
@@ -246,6 +249,14 @@ public class Main extends ApplicationAdapter {
         if (UI != null) { UI.dispose(); UI = null; }
         if (world != null) { world.dispose(); world = null; }
 
+        // Reset run-specific map state
+        for (int y = 0; y < WORLD_H; y++) {
+            for (int x = 0; x < WORLD_W; x++) {
+                cleared[y][x] = false;
+            }
+        }
+        dungeonMap = null;
+
         // -------------------- WFC GENERATION --------------------
         // Build templates from your room library (you said all combos exist except ffff)
         RoomLibrary lib = new RoomLibrary(rooms);
@@ -272,6 +283,10 @@ public class Main extends ApplicationAdapter {
         room = worldRooms[worldCellY][worldCellX];
         if (room == null) room = rooms.get(0); // ultra-safe fallback
 
+        // Dungeon map (discovery state for minimap/map overlay)
+        dungeonMap = new DungeonMap(worldRooms, cleared, worldCellX, worldCellY);
+        dungeonMap.discover(worldCellX, worldCellY);
+
         // Keep viewport references in sync for any project/unproject or UI conversions
         room.setViewport(viewport);
 
@@ -288,7 +303,10 @@ public class Main extends ApplicationAdapter {
         world.setDoorListener(this::handleDoorUsed);
 
         //This marks the cell as cleared when a wave ends
-        world.setRoomClearListener(() -> cleared[worldCellY][worldCellX] = true);
+        world.setRoomClearListener(() -> {
+            cleared[worldCellY][worldCellX] = true;
+            if (dungeonMap != null) dungeonMap.setCleared(worldCellX, worldCellY, true);
+        });
 
 
         // Authoritative instances
@@ -299,6 +317,9 @@ public class Main extends ApplicationAdapter {
 
         // Critical: UI viewport for fullscreen/letterbox mouse mapping
         UI.setUiViewport(uiViewport);
+
+        // Provide dungeon map for minimap/map overlay
+        UI.setDungeonMap(dungeonMap);
     }
 
     @Override
@@ -309,6 +330,9 @@ public class Main extends ApplicationAdapter {
 
         if (room != null) room.setViewport(viewport);
         if (UI != null) UI.setUiViewport(uiViewport);
+
+        // Provide dungeon map for minimap/map overlay
+        if (UI != null) UI.setDungeonMap(dungeonMap);
     }
 
     @Override
@@ -584,6 +608,12 @@ private void handleDoorUsed(Dir dir) {
         // Switch cell
         worldCellX = nx;
         worldCellY = ny;
+
+        // Update dungeon map discovery
+        if (dungeonMap != null) {
+            dungeonMap.setCurrent(worldCellX, worldCellY);
+            dungeonMap.discover(worldCellX, worldCellY);
+        }
 
         // Activate room
         room = next;

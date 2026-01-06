@@ -55,6 +55,10 @@ private final Texture radialLightTex;   // white radial gradient (alpha falloff)
 private final Texture vignetteTex;      // black vignette (alpha towards edges)
 private boolean lightingEnabled = true;
 
+    // Dungeon map (minimap + full-screen overlay)
+    private DungeonMap dungeonMap;
+    private boolean mapOpen = false;
+
 // Tune these to taste (values assume the game's 16:9 virtual size ~853x480).
 private static final float AMBIENT_DARKNESS_ALPHA = 0.48f; // overall darkness level
 private static final float VIGNETTE_ALPHA = 0.70f;         // extra edge darkening
@@ -216,6 +220,12 @@ vignetteTex.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear
         this.uiViewport = vp;
     }
 
+    /** Provide the dungeon map from Main (for minimap + full map). */
+    public void setDungeonMap(DungeonMap map) {
+        this.dungeonMap = map;
+        this.mapOpen = false;
+    }
+
     /** If Main expects UI.resize(...), keep this method. */
     public void resize(int screenW, int screenH) {
         // Virtual UI size is fixed; viewport itself is updated in Main.
@@ -239,6 +249,11 @@ vignetteTex.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear
 
         float delta = Gdx.graphics.getDeltaTime();
         uiTime += delta;
+
+        // Toggle full map overlay
+        if (!world.isChoosingUpgrade() && Gdx.input.isKeyJustPressed(Input.Keys.M)) {
+            mapOpen = !mapOpen;
+        }
 
         // Detect entering upgrade state and start input delay
         boolean choosing = world.isChoosingUpgrade();
@@ -300,17 +315,22 @@ vignetteTex.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear
 
         spriteBatch.begin();
 
-        if (lightingEnabled && !world.isChoosingUpgrade()) {
+        if (lightingEnabled && !world.isChoosingUpgrade() && !mapOpen) {
             drawLightingOverlay();
         }
 
         if (!world.isChoosingUpgrade()) {
-            drawHud();
+            if (mapOpen) {
+                drawDimOverlay(0.65f);
+                drawFullMapOverlay();
+            } else {
+                drawHud();
 
-            drawChestPrompt();
-            drawDamagePopupsScreenSpace();
-            drawShrinePromptIfNear(); // optional UI prompt
-            drawDoorPromptIfNear();
+                drawChestPrompt();
+                drawDamagePopupsScreenSpace();
+                drawShrinePromptIfNear(); // optional UI prompt
+                drawDoorPromptIfNear();
+            }
         }
 
         if (world.isChoosingUpgrade()) {
@@ -963,6 +983,308 @@ private static Texture buildVignetteTexture(int size) {
 
         // Small icons to the left of each bar.
         float iconSize = 14f;
+
+        // Mini-map under the bars (left side)
+        float mapGap = 10f;
+        float mapW = 150f;
+        float mapH = 150f;
+        float mapX = x;
+        float mapY = manaY - mapGap - mapH;
+        if (mapY < 8f) mapY = 8f;
+        drawMiniMap(mapX, mapY, mapW, mapH);
+    }
+
+
+    // ----------------------------
+    // Dungeon map rendering (screen space)
+    // ----------------------------
+
+    /**
+     * Mini-map (HUD): shows the CURRENT ROOM (node) layout:
+     *  - walls/blocked tiles
+     *  - doors (open vs closed)
+     *  - enemy positions
+     *  - player position
+     */
+    private void drawMiniMap(float x, float y, float w, float h) {
+        Room room = world.getRoom();
+        if (room == null) return;
+
+        drawPanel(x, y, w, h, 0.35f);
+
+        float pad = 8f;
+        float innerX = x + pad;
+        float innerY = y + pad;
+        float innerW = Math.max(1f, w - pad * 2f);
+        float innerH = Math.max(1f, h - pad * 2f);
+
+        drawRoomMiniMap(innerX, innerY, innerW, innerH, room);
+    }
+
+    private void drawRoomMiniMap(float x, float y, float w, float h, Room room) {
+        int roomW = room.getRoomWidth();
+        int roomH = room.getRoomHeight();
+        if (roomW <= 0 || roomH <= 0) return;
+
+        int[][] col;
+        try { col = room.getCollisions(); }
+        catch (Throwable t) { col = null; }
+
+        // Cell size in screen space.
+        float cell = Math.min(w / (float) roomW, h / (float) roomH);
+        if (cell <= 2f) return;
+
+        float gridW = cell * roomW;
+        float gridH = cell * roomH;
+        float ox = x + (w - gridW) * 0.5f;
+        float oy = y + (h - gridH) * 0.5f;
+
+        // Background grid (very subtle) + walls/doors.
+        for (int ty = 0; ty < roomH; ty++) {
+            int cy = (roomH - 1) - ty; // match world-space flip (see GameWorld rectHitsCollision)
+            for (int tx = 0; tx < roomW; tx++) {
+                float px = ox + tx * cell;
+                float py = oy + ty * cell;
+
+                // Light floor tint so the room reads as a shape.
+                drawRect(px, py, cell, cell, 1f, 1f, 1f, 0.03f);
+
+                boolean solid = false;
+                if (col != null && cy >= 0 && cy < col.length && tx >= 0 && tx < col[cy].length) {
+                    solid = (col[cy][tx] == 76);
+                }
+
+                // Door slot? (room uses a door-slot grid named "doors")
+                boolean doorSlot = false;
+                try { doorSlot = room.isDoor(tx, cy); }
+                catch (Throwable ignored) { }
+
+                if (doorSlot) {
+                    // Open door = not solid (collision mask makes inactive doors solid)
+                    boolean open = !solid;
+                    if (open) {
+                        drawRect(px, py, cell, cell, 0.35f, 0.95f, 0.95f, 0.95f);
+                    } else {
+                        drawRect(px, py, cell, cell, 0.95f, 0.55f, 0.25f, 0.95f);
+                    }
+                } else if (solid) {
+                    // Wall/blocked
+                    drawRect(px, py, cell, cell, 0.10f, 0.10f, 0.12f, 0.90f);
+                }
+            }
+        }
+
+        // Entities (enemies + player) on top.
+        float tileSize = room.getTileSize();
+        float marker = Math.max(2f, cell * 0.35f);
+
+        // Enemies
+        for (Enemy e : world.getEnemies()) {
+            if (e == null || e.isDead()) continue;
+            float ex = e.getX() + e.getWidth() * 0.5f;
+            float ey = e.getY() + e.getHeight() * 0.5f;
+            int tx = (int)Math.floor(ex / tileSize);
+            int ty = (int)Math.floor(ey / tileSize);
+            if (tx < 0 || tx >= roomW || ty < 0 || ty >= roomH) continue;
+
+            float px = ox + tx * cell + (cell - marker) * 0.5f;
+            float py = oy + ty * cell + (cell - marker) * 0.5f;
+            drawRect(px, py, marker, marker, 0.95f, 0.25f, 0.25f, 0.95f);
+        }
+
+        // Player
+        Player p = world.getPlayer();
+        if (p != null) {
+            float pxw = p.getX() + p.getWidth() * 0.5f;
+            float pyw = p.getY() + p.getHeight() * 0.5f;
+            int tx = (int)Math.floor(pxw / tileSize);
+            int ty = (int)Math.floor(pyw / tileSize);
+            if (tx >= 0 && tx < roomW && ty >= 0 && ty < roomH) {
+                float px = ox + tx * cell + (cell - marker) * 0.5f;
+                float py = oy + ty * cell + (cell - marker) * 0.5f;
+                drawRect(px, py, marker, marker, 0.35f, 0.70f, 1.00f, 1.00f);
+                // small outline so it doesn't disappear on bright doors
+                float o = Math.max(1f, marker * 0.18f);
+                drawRect(px, py, marker, o, 0f, 0f, 0f, 0.65f);
+                drawRect(px, py + marker - o, marker, o, 0f, 0f, 0f, 0.65f);
+                drawRect(px, py, o, marker, 0f, 0f, 0f, 0.65f);
+                drawRect(px + marker - o, py, o, marker, 0f, 0f, 0f, 0.65f);
+            }
+        }
+
+        spriteBatch.setColor(Color.WHITE);
+    }
+
+    private void drawFullMapOverlay() {
+        if (dungeonMap == null || dungeonMap.getWidth() <= 0 || dungeonMap.getHeight() <= 0) {
+            font.setColor(Color.WHITE);
+            float osx = font.getData().scaleX;
+            float osy = font.getData().scaleY;
+            font.getData().setScale(0.9f);
+            drawCenteredText("MAP (M to close)", width * 0.5f, height * 0.5f + 18f);
+            font.getData().setScale(0.7f);
+            drawCenteredText("No map data", width * 0.5f, height * 0.5f - 6f);
+            font.getData().setScale(osx, osy);
+            return;
+        }
+
+        // Panel
+        float panelW = Math.min(width - 70f, 650f);
+        float panelH = Math.min(height - 110f, 390f);
+        float px = Math.round((width - panelW) * 0.5f);
+        float py = Math.round((height - panelH) * 0.5f - 6f);
+
+        drawPanel(px, py, panelW, panelH, 0.35f);
+
+        // Title
+        float osx = font.getData().scaleX;
+        float osy = font.getData().scaleY;
+        font.setColor(Color.WHITE);
+        font.getData().setScale(0.9f);
+        drawCenteredText("MAP (M to close)", width * 0.5f, py + panelH + 24f);
+
+        // Map itself
+        float pad = 18f;
+        drawDungeonMap(px + pad, py + pad, panelW - pad * 2f, panelH - pad * 2f, true);
+
+        // Legend (bottom inside panel)
+        font.getData().setScale(0.6f);
+        float lx = px + pad;
+        float ly = py + 8f;
+        drawMapLegend(lx, ly);
+
+        font.getData().setScale(osx, osy);
+        font.setColor(Color.WHITE);
+    }
+
+    private void drawMapLegend(float x, float y) {
+        // Small color chips + text.
+        float chip = 8f;
+        float gap = 10f;
+
+        float cx = x;
+
+        // Current
+        drawColorChip(cx, y, chip, 0.95f, 0.86f, 0.35f, 1f);
+        font.draw(spriteBatch, "current", cx + chip + 5f, y + chip);
+        cx += chip + 5f + 52f + gap;
+
+        // Cleared
+        drawColorChip(cx, y, chip, 0.20f, 0.85f, 0.35f, 1f);
+        font.draw(spriteBatch, "cleared", cx + chip + 5f, y + chip);
+        cx += chip + 5f + 48f + gap;
+
+        // Visited
+        drawColorChip(cx, y, chip, 0.70f, 0.70f, 0.75f, 1f);
+        font.draw(spriteBatch, "visited", cx + chip + 5f, y + chip);
+    }
+    private void drawColorChip(float x, float y, float size, float r, float g, float b, float a) {
+        Color c = spriteBatch.getColor();
+        float pr = c.r, pg = c.g, pb = c.b, pa = c.a;
+        spriteBatch.setColor(r, g, b, a);
+        spriteBatch.draw(whitePixel, x, y, size, size);
+        spriteBatch.setColor(pr, pg, pb, pa);
+    }
+
+    private void drawDungeonMap(float x, float y, float w, float h, boolean large) {
+        int cw = dungeonMap.getWidth();
+        int ch = dungeonMap.getHeight();
+        if (cw <= 0 || ch <= 0) return;
+
+        float cell = Math.min(w / (float) cw, h / (float) ch);
+        if (cell <= 2f) return;
+
+        float gridW = cell * cw;
+        float gridH = cell * ch;
+
+        float ox = x + (w - gridW) * 0.5f;
+        float oy = y + (h - gridH) * 0.5f;
+
+        float roomSize = cell * 0.72f;
+        float margin = (cell - roomSize) * 0.5f;
+
+        float conn = Math.max(2f, cell * 0.18f);
+
+        // Connections first (under rooms)
+        for (int cy = 0; cy < ch; cy++) {
+            for (int cx = 0; cx < cw; cx++) {
+                if (!dungeonMap.isDiscovered(cx, cy)) continue;
+
+                RoomTemplate t = dungeonMap.getTemplate(cx, cy);
+                if (t == null) continue;
+
+                float baseX = ox + cx * cell;
+                float baseY = oy + cy * cell;
+
+                float roomX = baseX + margin;
+                float roomY = baseY + margin;
+
+                float midX = roomX + roomSize * 0.5f;
+                float midY = roomY + roomSize * 0.5f;
+
+                // Right connection
+                if (t.openRight() && dungeonMap.inBounds(cx + 1, cy) && dungeonMap.isDiscovered(cx + 1, cy)) {
+                    float x1 = roomX + roomSize;
+                    float x2 = (baseX + cell) + margin;
+                    drawRect(x1, midY - conn * 0.5f, x2 - x1, conn, 0.75f, 0.75f, 0.80f, 0.9f);
+                }
+
+                // Up connection
+                if (t.openUp() && dungeonMap.inBounds(cx, cy + 1) && dungeonMap.isDiscovered(cx, cy + 1)) {
+                    float y1 = roomY + roomSize;
+                    float y2 = (baseY + cell) + margin;
+                    drawRect(midX - conn * 0.5f, y1, conn, y2 - y1, 0.75f, 0.75f, 0.80f, 0.9f);
+                }
+            }
+        }
+
+        // Rooms
+        for (int cy = 0; cy < ch; cy++) {
+            for (int cx = 0; cx < cw; cx++) {
+                boolean discovered = dungeonMap.isDiscovered(cx, cy);
+                if (!discovered && !large) continue;
+
+                float baseX = ox + cx * cell;
+                float baseY = oy + cy * cell;
+                float roomX = baseX + margin;
+                float roomY = baseY + margin;
+
+                // Colors
+                boolean isCur = (cx == dungeonMap.getCurrentX() && cy == dungeonMap.getCurrentY());
+                boolean isCleared = dungeonMap.isCleared(cx, cy);
+
+                float r, g, b, a;
+                if (!discovered) {
+                    r = g = b = 0.25f;
+                    a = 0.22f;
+                } else if (isCur) {
+                    r = 0.95f; g = 0.86f; b = 0.35f; a = 1f;
+                } else if (isCleared) {
+                    r = 0.20f; g = 0.85f; b = 0.35f; a = 1f;
+                } else {
+                    r = 0.70f; g = 0.70f; b = 0.75f; a = 0.95f;
+                }
+
+                drawRect(roomX, roomY, roomSize, roomSize, r, g, b, a);
+
+                // Outline
+                float o = Math.max(1f, cell * 0.06f);
+                drawRect(roomX, roomY, roomSize, o, 0f, 0f, 0f, 0.65f);
+                drawRect(roomX, roomY + roomSize - o, roomSize, o, 0f, 0f, 0f, 0.65f);
+                drawRect(roomX, roomY, o, roomSize, 0f, 0f, 0f, 0.65f);
+                drawRect(roomX + roomSize - o, roomY, o, roomSize, 0f, 0f, 0f, 0.65f);
+            }
+        }
+
+        // Restore batch color (in case something left it tinted)
+        spriteBatch.setColor(Color.WHITE);
+    }
+    private void drawRect(float x, float y, float w, float h, float r, float g, float b, float a) {
+        Color c = spriteBatch.getColor();
+        float pr = c.r, pg = c.g, pb = c.b, pa = c.a;
+        spriteBatch.setColor(r, g, b, a);
+        spriteBatch.draw(whitePixel, x, y, w, h);
+        spriteBatch.setColor(pr, pg, pb, pa);
     }
 
     private void drawTopRightStats() {
