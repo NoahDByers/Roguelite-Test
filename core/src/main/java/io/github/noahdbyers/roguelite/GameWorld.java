@@ -76,6 +76,9 @@ public class GameWorld {
 
             c.opened = true;
 
+            particles.spawnChestOpen(c.x + c.w * 0.5f, c.y + c.h * 0.5f);
+
+
             // Reward: item or souls
             if (c.itemReward != null) {
                 boolean got = items.addItem(c.itemReward, this);
@@ -194,6 +197,9 @@ public class GameWorld {
     private final Texture cardTexture = Utility.loadNearest("ui/upgrade_card.png");
     private final Random rng = new Random();
 
+    // -------------------- Particles --------------------
+    private final ParticleSystem particles = new ParticleSystem(rng);
+
     // Enemy Drops
     private final ArrayList<Drop> drops = new ArrayList<>();
     public ArrayList<Drop> getDrops() { return drops; }
@@ -266,6 +272,9 @@ public class GameWorld {
     public Player getPlayer() { return player; }
     public ArrayList<Enemy> getEnemies() { return enemies; }
 
+
+    public ParticleSystem getParticles() { return particles; }
+
     public boolean isGameOver() { return gameOver; }
     public boolean isChoosingUpgrade() { return choosingUpgrade; } // UI uses this
 
@@ -330,6 +339,10 @@ public class GameWorld {
             restart();
             return;
         }
+
+        // Particles tick even during hitstop/menus/game over.
+        particles.update(delta);
+
         if (gameOver) return;
 
         // Cooldowns tick regardless
@@ -421,6 +434,15 @@ public class GameWorld {
             e.tickFlash(delta);
             e.tickStatus(delta);
         }
+        // Remove enemies that died to DoTs / non-hitbox effects.
+        for (int i = enemies.size() - 1; i >= 0; i--) {
+            Enemy e = enemies.get(i);
+            if (e != null && e.isDead()) {
+                handleEnemyDeath(i, e, null);
+            }
+        }
+
+
 
         updateDropPickups();
 
@@ -1043,7 +1065,28 @@ public class GameWorld {
         hitboxShakeUsed.put(hb, false);
     }
 
-    private void updateMeleeHitboxes(float delta) {
+    
+    // -------------------- Enemy death handling --------------------
+    private void handleEnemyDeath(int index, Enemy enemy, DamageType causeType) {
+        if (enemy == null) {
+            if (index >= 0 && index < enemies.size()) enemies.remove(index);
+            return;
+        }
+
+        float cx = enemy.getX() + enemy.getWidth() * 0.5f;
+        float cy = enemy.getY() + enemy.getHeight() * 0.5f;
+
+        // Particles first so we can sample enemy position before it disappears.
+        particles.spawnEnemyDeath(cx, cy, causeType);
+
+        // Drop a soul (simple baseline reward).
+        drops.add(new Drop(cx - 6f, cy - 6f, 1));
+
+        if (index >= 0 && index < enemies.size()) enemies.remove(index);
+        enemiesKilled++;
+    }
+
+private void updateMeleeHitboxes(float delta) {
         if (player == null) return;
 
         float pcx = player.getX() + player.getWidth() * 0.5f;
@@ -1083,6 +1126,11 @@ public class GameWorld {
                 )) {
                     // Main hit
                     enemy.takeDamage(hb.damage, hb.damageType);
+
+                    // Particles: hit sparks at enemy center (color varies by DamageType; crit = juicier).
+                    float hx = enemy.getX() + enemy.getWidth() * 0.5f;
+                    float hy = enemy.getY() + enemy.getHeight() * 0.5f;
+                    particles.spawnHit(hx, hy, hb.dir.x, hb.dir.y, hb.crit, hb.damageType);
                     // Tell combat system we connected a hit (for hit-confirm cancels/recovery)
                     combat.notifyHitConfirmed();
                     alreadyHit.add(enemy);
@@ -1098,15 +1146,10 @@ public class GameWorld {
                     enemy.applyHitstun(stun);
 
                     if (enemy.isDead()) {
-                        float dx = enemy.getX() + enemy.getWidth() * 0.5f;
-                        float dy = enemy.getY() + enemy.getHeight() * 0.5f;
-                        drops.add(new Drop(dx - 6f, dy - 6f, 1));
-
-                        enemies.remove(e);
-                        enemiesKilled++;
+                        handleEnemyDeath(e, enemy, hb.damageType);
                     }
 
-                    if (!sfxUsed) {
+if (!sfxUsed) {
                         if (audio != null) audio.playHit();
                         hitboxHitSfxUsed.put(hb, true);
                     }
@@ -1176,6 +1219,7 @@ public class GameWorld {
 
     // -------------------- Dispose --------------------
     public void dispose() {
+        if (particles != null) particles.dispose();
         cardTexture.dispose();
 
         healthUpgradeSheet.dispose();
