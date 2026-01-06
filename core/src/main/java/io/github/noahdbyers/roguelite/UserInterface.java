@@ -3,6 +3,7 @@ package io.github.noahdbyers.roguelite;
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Input;
 import com.badlogic.gdx.graphics.Color;
+import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.Pixmap;
 import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
@@ -46,6 +47,25 @@ public class UserInterface {
 
     // 1x1 white pixel for overlays
     private final Texture whitePixel;
+
+// ----------------------------
+// Lighting (screen-space overlay over the world)
+// ----------------------------
+private final Texture radialLightTex;   // white radial gradient (alpha falloff)
+private final Texture vignetteTex;      // black vignette (alpha towards edges)
+private boolean lightingEnabled = true;
+
+// Tune these to taste (values assume the game's 16:9 virtual size ~853x480).
+private static final float AMBIENT_DARKNESS_ALPHA = 0.48f; // overall darkness level
+private static final float VIGNETTE_ALPHA = 0.70f;         // extra edge darkening
+
+private static final float PLAYER_LIGHT_RADIUS = 240f;
+private static final float PLAYER_LIGHT_INTENSITY = 0.04f;
+
+private static final float SHRINE_LIGHT_RADIUS = 260f;
+private static final float SHRINE_LIGHT_INTENSITY = 0.05f;
+
+private final Vector2 tmpUiPos2 = new Vector2();
 
     // ----------------------------
     // Upgrade input delay (prevents accidental selection)
@@ -173,6 +193,13 @@ public class UserInterface {
         whitePixel = new Texture(pm);
         pm.dispose();
 
+// Lighting textures (procedurally generated so no assets needed).
+radialLightTex = buildRadialLightTexture(256);
+radialLightTex.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
+
+vignetteTex = buildVignetteTexture(512);
+vignetteTex.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
+
         // Screen-space: (0..width, 0..height) where width/height are VIRTUAL size
         screenProjection.setToOrtho2D(0f, 0f, width, height);
         identityTransform.idt();
@@ -272,6 +299,10 @@ public class UserInterface {
         spriteBatch.setTransformMatrix(identityTransform);
 
         spriteBatch.begin();
+
+        if (lightingEnabled && !world.isChoosingUpgrade()) {
+            drawLightingOverlay();
+        }
 
         if (!world.isChoosingUpgrade()) {
             drawHud();
@@ -475,6 +506,143 @@ public class UserInterface {
         drawKeyPrompt(keyE, "Pray", uiX, uiY);
         font.getData().setScale(1.0f);
     }
+
+
+
+// ----------------------------
+// Lighting helpers (SCREEN SPACE)
+// ----------------------------
+
+/** Toggle the lighting overlay (useful if you add a settings menu later). */
+public void setLightingEnabled(boolean enabled) {
+    this.lightingEnabled = enabled;
+}
+
+/** Project a WORLD point into UI-virtual coords (0..width, 0..height). */
+private boolean worldToUi(float worldX, float worldY, Vector2 out) {
+    if (viewport == null) return false;
+
+    tmpV3.set(worldX, worldY, 0f);
+    viewport.project(tmpV3);
+
+    float sxToUi = width / (float) viewport.getScreenWidth();
+    float syToUi = height / (float) viewport.getScreenHeight();
+
+    int vx = viewport.getScreenX();
+    int vy = viewport.getScreenY();
+
+    out.set((tmpV3.x - vx) * sxToUi,
+            (tmpV3.y - vy) * syToUi);
+    return true;
+}
+
+private void drawLight(float centerX, float centerY, float radius, float intensity,
+                       float r, float g, float b) {
+    if (radialLightTex == null) return;
+    float d = radius * 2f;
+    spriteBatch.setColor(r, g, b, clamp(intensity, 0f, 1f));
+    spriteBatch.draw(radialLightTex, centerX - radius, centerY - radius, d, d);
+}
+
+/**
+ * Draws:
+ * 1) ambient darkness + vignette (normal alpha blending)
+ * 2) player + shrine lights (additive blending)
+ *
+ * Must be called while the SpriteBatch is begun and using screenProjection.
+ */
+private void drawLightingOverlay() {
+    if (spriteBatch == null || whitePixel == null) return;
+
+    // Save current batch state
+    Color c = spriteBatch.getColor();
+    float sr = c.r, sg = c.g, sb = c.b, sa = c.a;
+
+    // 1) Ambient darkness
+    spriteBatch.setBlendFunction(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
+    spriteBatch.setColor(0f, 0f, 0f, AMBIENT_DARKNESS_ALPHA);
+    spriteBatch.draw(whitePixel, 0f, 0f, width, height);
+
+    // 2) Extra edge darkening (vignette)
+    if (vignetteTex != null) {
+        spriteBatch.setColor(0f, 0f, 0f, VIGNETTE_ALPHA);
+        spriteBatch.draw(vignetteTex, 0f, 0f, width, height);
+    }
+
+    // 3) Lights (additive)
+    spriteBatch.setBlendFunction(GL20.GL_SRC_ALPHA, GL20.GL_ONE);
+
+    // Player light (keeps nearby area clearly visible)
+    Player p = world.getPlayer();
+    if (p != null && worldToUi(p.getX() + p.getWidth() * 0.5f, p.getY() + p.getHeight() * 0.5f, tmpUiPos2)) {
+        drawLight(tmpUiPos2.x, tmpUiPos2.y, PLAYER_LIGHT_RADIUS, PLAYER_LIGHT_INTENSITY,
+                1f, 1f, 1f);
+    }
+
+    // Shrine light (warm glow)
+    Shrine s = null;
+    try {
+        s = world.getShrine();
+    } catch (Throwable ignored) { }
+    if (s != null && worldToUi(s.x + s.w * 0.5f, s.y + s.h * 0.65f, tmpUiPos2)) {
+        drawLight(tmpUiPos2.x, tmpUiPos2.y, SHRINE_LIGHT_RADIUS, SHRINE_LIGHT_INTENSITY,
+                1.0f, 0.9f, 0.65f);
+    }
+
+    // Restore blend + color
+    spriteBatch.setBlendFunction(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
+    spriteBatch.setColor(sr, sg, sb, sa);
+}
+
+private static Texture buildRadialLightTexture(int size) {
+    int s = Math.max(8, size);
+    Pixmap pm = new Pixmap(s, s, Pixmap.Format.RGBA8888);
+
+    float cx = (s - 1) * 0.5f;
+    float cy = (s - 1) * 0.5f;
+    float max = Math.max(1f, cx);
+
+    for (int y = 0; y < s; y++) {
+        for (int x = 0; x < s; x++) {
+            float dx = (x - cx);
+            float dy = (y - cy);
+            float d = (float) Math.sqrt(dx * dx + dy * dy) / max;
+            float a = clamp(1f - d, 0f, 1f);
+            a = a * a;
+            pm.setColor(1f, 1f, 1f, a);
+            pm.drawPixel(x, y);
+        }
+    }
+
+    Texture t = new Texture(pm);
+    pm.dispose();
+    return t;
+}
+
+private static Texture buildVignetteTexture(int size) {
+    int s = Math.max(8, size);
+    Pixmap pm = new Pixmap(s, s, Pixmap.Format.RGBA8888);
+
+    float cx = (s - 1) * 0.5f;
+    float cy = (s - 1) * 0.5f;
+    float max = (float) Math.sqrt(cx * cx + cy * cy);
+
+    for (int y = 0; y < s; y++) {
+        for (int x = 0; x < s; x++) {
+            float dx = x - cx;
+            float dy = y - cy;
+            float d = (float) Math.sqrt(dx * dx + dy * dy) / max;
+            float a = clamp(d, 0f, 1f);
+            a = (float) Math.pow(a, 2.2);
+            pm.setColor(0f, 0f, 0f, a);
+            pm.drawPixel(x, y);
+        }
+    }
+
+    Texture t = new Texture(pm);
+    pm.dispose();
+    return t;
+}
 
     private void drawDimOverlay(float alpha) {
         Color c = spriteBatch.getColor();
