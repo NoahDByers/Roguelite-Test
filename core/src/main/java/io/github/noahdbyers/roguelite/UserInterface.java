@@ -258,6 +258,10 @@ public class UserInterface {
             w.draw(spriteBatch, delta, p);
         }
 
+
+        // ✅ PARTICLES (WORLD SPACE)
+        if (world.getParticles() != null) world.getParticles().draw(spriteBatch);
+
         spriteBatch.end();
 
         // ----------------------------
